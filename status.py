@@ -79,70 +79,106 @@ SEEDING = ("\U0001F331", "Seeding", 0xF1C40F)
 LIVE = ("\U0001F525", "Live", 0x2ECC71)
 
 
-def build_embed(server_id):
-    """Returns (embed, fingerprint, status). The fingerprint leaves out timestamps, so
-    it only changes when something a player would care about changes. status is the
-    raw Warcon status, or None if it could not be read."""
+def short_name(full):
+    """'[RLG] Redline Gaming [Vanilla] #1 - discord.gg/...' -> 'Vanilla #1'"""
+    full = str(full or "").split(" - ")[0].strip()
+    m = re.search(r"\[(?!RLG\])([^\]]+)\]\s*(#\d+)?", full)
+    if m:
+        return (m.group(1) + (" " + m.group(2) if m.group(2) else "")).strip()
+    return full or "Server"
+
+
+_match_cache = {}   # server id -> (time checked, start of the current match as unix time)
+
+
+def match_started(server_id):
+    """When the match now running began, from Warcon's match list (the entry with
+    no end time). Looked up at most once a minute per server; None if unknown."""
+    checked, value = _match_cache.get(server_id, (0, None))
+    if time.time() - checked < 60:
+        return value
+    try:
+        matches = http("GET", f"{ORIGIN}/api/public/servers/{server_id}/matches").get("matches") or []
+        current = next((m for m in matches if not m.get("endedAt")), None)
+        value = unix(current.get("startedAt")) if current else None
+    except (urllib.error.URLError, TimeoutError, ValueError, AttributeError):
+        pass  # keep the last known value
+    _match_cache[server_id] = (time.time(), value)
+    return value
+
+
+def build_column(server_id):
+    """One server as one column of the card. Returns (field, rank, status, seen):
+    rank orders the states (3 live, 2 seeding, 1 empty, 0 offline or unknown) and
+    seen is when Warcon last looked at the server."""
     page = f"{ORIGIN}/s/{server_id}"
     links = f"[Server page]({page}) · [Leaderboard]({page}/leaderboard)"
     try:
         s = http("GET", f"{ORIGIN}/api/public/servers/{server_id}").get("server", {})
     except (urllib.error.URLError, TimeoutError, ValueError) as e:
         code = getattr(e, "code", None)
-        body = f"\u26A0\ufe0f **Status unavailable** (Warcon gave {'HTTP ' + str(code) if code else 'no answer'}). Will retry."
-        return {"title": "Server status", "url": page, "description": body, "color": 0x95A5A6}, body, None
+        why = f"HTTP {code}" if code else "no answer"
+        return ({"name": "\u26A0\ufe0f Status unavailable", "inline": True,
+                 "value": f"Warcon gave {why}. Will retry.\n{links}"}, 0, None, None)
 
-    name = str(s.get("name") or "Server status").split(" - ")[0].strip()
+    name = short_name(s.get("name"))
     players, cap = s.get("players") or 0, s.get("maxPlayers") or 0
     if not s.get("ok"):
-        state = OFFLINE
-    elif players < seed.LOW:
-        state = EMPTY
+        return ({"name": f"{OFFLINE[0]} {name} · Offline", "inline": True,
+                 "value": f"Offline or unreachable.\n{links}"}, 0, s, unix(s.get("observedAt")))
+    if players < seed.LOW:
+        state, rank, note = EMPTY, 1, "Jump on and start the seed"
     elif players <= seed.HIGH:
-        state = SEEDING
+        state, rank, note = SEEDING, 2, f"{seed.HIGH + 1 - players} more to go live"
     else:
-        state = LIVE
-    icon, label, color = state
+        state, rank, note = LIVE, 3, "Match in progress"
 
-    if state is OFFLINE:
-        headline = f"{icon} **Offline or unreachable**"
-    elif state is EMPTY:
-        headline = f"{icon} **Empty** · jump on and start the seed"
-    elif state is SEEDING:
-        headline = f"{icon} **Seeding** · {seed.HIGH + 1 - players} more to go live"
-    else:
-        headline = f"{icon} **Live**"
-    embed = {"title": name[:256], "url": page, "color": color, "description": headline, "fields": []}
-
-    if state is not OFFLINE:
-        embed["fields"] += [
-            {"name": "\U0001F465 Players", "value": f"**{players}/{cap}**\n{meter(players, cap)}", "inline": True},
-            {"name": "\U0001F5FA\ufe0f Map", "value": words(s.get("map")) or "Unknown", "inline": True},
-            {"name": "\U0001F326\ufe0f Weather", "value": words(s.get("lighting")) or "Unknown", "inline": True},
-        ]
-        if s.get("experiences"):
-            embed["fields"].append({"name": "\U0001F3AE Mode", "inline": False,
-                                    "value": ", ".join(words(x) for x in s["experiences"])})
-        scores = s.get("scores") or []
+    lines = [f"**{players}/{cap} players** · {note}", meter(players, cap, 12)]
+    if s.get("map"):
+        lines.append(f"\U0001F5FA\ufe0f **Map:** {words(s['map'])}")
+    if s.get("lighting"):
+        lines.append(f"\U0001F326\ufe0f **Weather:** {words(s['lighting'])}")
+    if s.get("experiences"):
+        lines.append("\U0001F3AE **Mode:** " + ", ".join(words(x) for x in s["experiences"]))
+    started = match_started(server_id)
+    if started:
+        # A Discord time chip: it reads "12 minutes ago" and keeps counting by itself.
+        lines.append(f"\u23F1\ufe0f **Match started:** <t:{started}:R>")
+    scores = s.get("scores") or []
+    if scores:
         per_side = {}
         for p in s.get("roster") or []:
             if isinstance(p, dict) and p.get("faction"):
                 per_side[p["faction"]] = per_side.get(p["faction"], 0) + 1
-        # Faction scores only mean something while a match is being played.
-        if players and scores:
-            lead = max(f.get("score", 0) for f in scores)
-            for f in scores[:3]:
-                pts, on = f.get("score", 0), per_side.get(f.get("name"), 0)
-                crown = " \U0001F451" if lead and pts == lead else ""
-                embed["fields"].append({
-                    "name": f"{f.get('name', 'Faction')}{crown}", "inline": True,
-                    "value": f"**{pts}** pts\n{on} player{'' if on == 1 else 's'}"})
+        lead = max(f.get("score", 0) for f in scores)
+        lines.append("")
+        for f in scores[:3]:
+            pts, on = f.get("score", 0), per_side.get(f.get("name"), 0)
+            crown = " \U0001F451" if lead and pts == lead else ""
+            lines.append(f"\u2694\ufe0f **{f.get('name', 'Faction')}:** {pts} pts · {on} on{crown}")
+    lines += ["", links]
+    field = {"name": f"{state[0]} {name} · {state[1]}", "value": "\n".join(lines)[:1024], "inline": True}
+    return field, rank, s, unix(s.get("observedAt"))
 
+
+def build_card(columns):
+    """All servers on one card, side by side. Returns (embed, fingerprint); the
+    fingerprint leaves out timestamps so it only changes when the content does."""
+    best = max((rank for _, rank, _, _ in columns), default=0)
+    color = {3: LIVE[2], 2: SEEDING[2], 1: EMPTY[2], 0: OFFLINE[2]}[best]
+    total = sum((s or {}).get("players") or 0 for _, _, s, _ in columns)
+    embed = {
+        "title": "RLG Live Server Status",
+        "description": f"**{total}** player{'' if total == 1 else 's'} online across {len(columns)} server"
+                       f"{'' if len(columns) == 1 else 's'}",
+        "color": color,
+        "fields": [f for f, _, _, _ in columns],
+    }
     fingerprint = json.dumps(embed, sort_keys=True)
-    seen = unix(s.get("observedAt"))
-    embed["fields"].append({"name": "\u200b", "inline": False,
-                            "value": links + (f"\nChecked <t:{seen}:R>" if seen else "")})
-    return embed, fingerprint, s
+    seen = [t for _, _, _, t in columns if t]
+    if seen:
+        embed["fields"].append({"name": "\u200b", "inline": False, "value": f"Checked <t:{min(seen)}:R>"})
+    return embed, fingerprint
 
 
 def read_message_id():
@@ -175,20 +211,18 @@ def send(payload):
 
 
 def update(last_fingerprint, last_sent, alerts=False):
-    built = [build_embed(sid) for sid in SERVER_IDS[:10]]
+    columns = [build_column(sid) for sid in SERVER_IDS[:10]]
     if alerts and not DRY_RUN:
-        for sid, (_, _, status) in zip(SERVER_IDS, built):
+        for sid, (_, _, status, _) in zip(SERVER_IDS, columns):
             seed.check(sid, status, f"{ORIGIN}/s/{sid}", http)
-    fingerprint = "\n---\n".join(fp for _, fp, _ in built)
+    embed, fingerprint = build_card(columns)
     if fingerprint == last_fingerprint and time.time() - last_sent < HEARTBEAT:
         return last_fingerprint, last_sent  # nothing changed, skip the edit
-    payload = {"embeds": [e for e, _, _ in built], "allowed_mentions": {"parse": []}}
+    payload = {"embeds": [embed], "allowed_mentions": {"parse": []}}
     if DRY_RUN:
-        for e in payload["embeds"]:
-            print(e["title"] + "\n" + e["description"])
-            for f in e.get("fields", []):
-                print(f"  [{'inline' if f['inline'] else 'full row'}] {f['name']}: " + f["value"].replace("\n", " / "))
-            print()
+        print(embed["title"] + "\n" + embed["description"] + "\n")
+        for f in embed["fields"]:
+            print(f"[{'column' if f['inline'] else 'full row'}] {f['name']}\n{f['value']}\n")
     else:
         print(time.strftime("%H:%M:%S"), send(payload), flush=True)
     return fingerprint, time.time()
