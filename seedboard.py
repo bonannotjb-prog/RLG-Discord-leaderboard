@@ -243,7 +243,9 @@ def board(rows, names, limit=2800):
         medal = " " + MEDALS[rank - 1] if rank <= 3 else ""
         # Noon UTC, so the date chip shows the same calendar day across the Americas.
         when = int(datetime.strptime(last, "%Y-%m-%d").replace(hour=12, tzinfo=timezone.utc).timestamp())
-        entry = (f"**{rank}. {plain(names.get(pid, 'unknown'), 32)}**{medal}\n"
+        # The backslash before the dot matters: Discord reads "1. " at the start of a
+        # line as a numbered list, which pushes the medal onto its own line.
+        entry = (f"**{rank}\\. {plain(names.get(pid, 'unknown'), 32)}**{medal}\n"
                  f"> {m // 60}h {m % 60:02d}m seeding over {ndays} day{'' if ndays == 1 else 's'}\n"
                  f"> Last seeded <t:{when}:D>")
         if used + len(entry) + 1 > limit:
