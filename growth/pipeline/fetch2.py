@@ -27,6 +27,8 @@ def get(url):
             if e.code == 429:
                 ra = e.headers.get("Retry-After"); log("  429", ra)
                 time.sleep(float(ra) + 1 if ra else 5 + attempt * 5); continue
+            if e.code >= 500 and attempt < 7:      # a passing server error: wait and try again
+                time.sleep(5 + attempt * 5); continue
             return {"errors": [{"status": e.code, "detail": e.read().decode("utf8", "replace")[:300]}]}
         except Exception as e:
             time.sleep(2 + attempt)
@@ -48,7 +50,7 @@ def sess_chunk(sid, a, b):
             at = s["attributes"]
             out[s["id"]] = [at["start"], at["stop"], 1 if at.get("firstTime") else 0, at.get("name"), s["relationships"]["player"]["data"]["id"]]
         url = (d.get("links") or {}).get("next")
-    return sid, out, errs
+    return sid, out, errs, (a, b)
 
 result = {"fetchedAt": iso(NOW), "servers": {}}
 jobs = []
@@ -67,9 +69,17 @@ for sid in SERVERS:
         "counts": sorted({c[0]: c for c in counts}.values()), "sessions": {}, "errors": []}
     jobs += [(sid, a, b) for a, b in chunks(s0, NOW, 2)]
 log("jobs", len(jobs))
-with ThreadPoolExecutor(8) as ex:
-    for sid, out, errs in ex.map(lambda j: sess_chunk(*j), jobs):
-        result["servers"][sid]["sessions"].update(out); result["servers"][sid]["errors"] += errs
+# any stretch of days that failed is pulled again, one at a time, up to three more times before it counts as an error
+for attempt in range(4):
+    failed = []
+    with ThreadPoolExecutor(8 if attempt == 0 else 1) as ex:
+        for sid, out, errs, span in ex.map(lambda j: sess_chunk(*j), jobs):
+            result["servers"][sid]["sessions"].update(out)
+            if errs:
+                failed.append((sid,) + span); last_errs = errs
+                if attempt == 3: result["servers"][sid]["errors"] += errs
+    if not failed: break
+    log("retrying", len(failed), "failed stretches", str(last_errs)[:200]); jobs = failed; time.sleep(20)
 for sid, s in result["servers"].items():
     s["sessions"] = list(s["sessions"].values())
     log(sid, s["name"], "counts", len(s["counts"]), "sessions", len(s["sessions"]), "errors", len(s["errors"]), str(s["errors"][:1])[:300])
