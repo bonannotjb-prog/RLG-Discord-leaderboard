@@ -30,10 +30,10 @@ jobs:
           # One id per server, separated by commas. Each server gets its own panel
           # in the same message. This one is [RLG] Redline Gaming [Vanilla] #1.
           WARCON_SERVER_IDS: "230a2cb3-e2af-450d-a1e1-515b08139d3d"
-          LB_RANGE: "current"      # current | 7d | 30d | 90d | all
+          LB_RANGE: "all"      # current | 7d | 30d | 90d | all
           LB_SORT: "kills"         # kills | kd | perHour | playtime | seeded | matches | wins | winRate | cash
           LB_MIN_MINUTES: "60"
-          LB_TOP: "15"
+          LB_TOP: "100"
         run: python leaderboard.py
 
       - name: Save the message id (first run only)
