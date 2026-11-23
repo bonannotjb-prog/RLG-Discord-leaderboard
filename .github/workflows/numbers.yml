@@ -1,0 +1,59 @@
+name: Discord weekly numbers
+
+on:
+  schedule:
+    # Mondays at 14:23 UTC: 9:23 AM Eastern, 7:23 AM Phoenix. A second try two
+    # hours later covers a skipped run; the job never posts the same week twice.
+    - cron: "23 14 * * 1"
+    - cron: "23 16 * * 1"
+  workflow_dispatch:      # the "Run workflow" button
+    inputs:
+      force:
+        description: "Post even if this week's numbers were already posted"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write         # lets the job record which week it posted
+
+concurrency:
+  group: discord-weekly-numbers
+  cancel-in-progress: false
+
+jobs:
+  numbers:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install the picture tools
+        run: pip install --quiet pillow fonttools
+
+      - name: Count the weekly numbers and post them
+        env:
+          BATTLEMETRICS_TOKEN: ${{ secrets.BATTLEMETRICS_TOKEN }}
+          DISCORD_NUMBERS_WEBHOOK_URL: ${{ secrets.DISCORD_NUMBERS_WEBHOOK_URL }}
+          # BattleMetrics server ids: RLG Vanilla, then RLG Infantry.
+          BM_SERVER_IDS: "41199298,41243237"
+          FORCE: ${{ inputs.force && '1' || '0' }}
+        run: python weekly_numbers.py
+
+      - name: Save state (week posted and weekly heartbeat)
+        run: |
+          # Weekly heartbeat: this file changes once a week, so the repository always
+          # has a recent commit and GitHub never pauses the schedule for inactivity.
+          mkdir -p state
+          date -u +%G-W%V > state/heartbeat-numbers.txt
+          if [ -n "$(git status --porcelain state)" ]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add state
+            git commit -m "Save weekly numbers state"
+            git pull --rebase
+            git push
+          fi
