@@ -1,0 +1,56 @@
+name: Discord weekly awards
+
+on:
+  schedule:
+    # Mondays at 15:07 UTC: 10:07 AM Eastern, 8:07 AM Phoenix. A second try two
+    # hours later covers a skipped run; the job never posts the same week twice.
+    - cron: "7 15 * * 1"
+    - cron: "7 17 * * 1"
+  workflow_dispatch:      # the "Run workflow" button
+    inputs:
+      force:
+        description: "Post even if this week's awards were already posted"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write         # lets the job record which week it posted
+
+concurrency:
+  group: discord-weekly-awards
+  cancel-in-progress: false
+
+jobs:
+  awards:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Post the weekly awards
+        env:
+          DISCORD_AWARDS_WEBHOOK_URL: ${{ secrets.DISCORD_AWARDS_WEBHOOK_URL }}
+          # Any one RLG server id is enough: the awards cover the whole organisation.
+          WARCON_SERVER_IDS: "230a2cb3-e2af-450d-a1e1-515b08139d3d"
+          AWARDS_MIN_MINUTES: "120"   # minutes played in the week to be eligible
+          FORCE: ${{ inputs.force && '1' || '0' }}
+        run: python awards.py
+
+      - name: Save state (week posted and weekly heartbeat)
+        run: |
+          # Weekly heartbeat: this file changes once a week, so the repository always
+          # has a recent commit and GitHub never pauses the schedule for inactivity.
+          mkdir -p state
+          date -u +%G-W%V > state/heartbeat-awards.txt
+          if [ -n "$(git status --porcelain state)" ]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add state
+            git commit -m "Save weekly awards state"
+            git pull --rebase
+            git push
+          fi
