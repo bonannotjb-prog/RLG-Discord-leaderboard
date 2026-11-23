@@ -26,6 +26,7 @@ Settings (environment variables, set in the workflow file):
   SEEDBOARD_TOP                  rows per board, 1-25 (default 15)
   DRY_RUN                        1 = print the boards instead of posting
 """
+import http.client
 import json
 import os
 import sys
@@ -91,8 +92,9 @@ def bm_get(url, waits=RETRY_WAITS):
             if e.code < 500:
                 sys.exit(f"BattleMetrics answered HTTP {e.code}: {detail}")
             last = f"HTTP {e.code}"
-        except (urllib.error.URLError, TimeoutError, ValueError) as e:
-            last = str(getattr(e, "reason", e))
+        except (OSError, http.client.HTTPException, ValueError) as e:
+            # dropped connections, timeouts and half-finished answers
+            last = str(getattr(e, "reason", e)) or type(e).__name__
         if attempt < len(waits):
             time.sleep(waits[attempt] * WAIT_SCALE)
     raise BMError(last)
@@ -206,27 +208,49 @@ def load():
 
 
 def totals(days, since=None):
+    """[(player id, seconds, days seeded, last day seeded)], most time first."""
     t = {}
     for day, players in days.items():
         if since and day < since:
             continue
         for pid, secs in players.items():
-            t[pid] = t.get(pid, 0) + secs
-    return sorted(t.items(), key=lambda kv: (-kv[1], kv[0]))
+            if secs <= 0:
+                continue
+            cur = t.get(pid, (0, 0, ""))
+            t[pid] = (cur[0] + secs, cur[1] + 1, max(cur[2], day))
+    return sorted(((pid, *v) for pid, v in t.items()), key=lambda r: (-r[1], r[0]))
 
 
-def table(rows, names):
-    lines = [f"{'#':>2}  {'Player':<22} {'Seeding':>9}"]
-    for rank, (pid, secs) in enumerate(rows[:TOP], 1):
-        name = names.get(pid, "unknown")
-        name = "".join(ch if ch.isprintable() else " " for ch in str(name)).replace("`", "'").strip()
-        if len(name) > 22:
-            name = name[:21] + "…"
+MEDALS = ["\U0001F947", "\U0001F948", "\U0001F949"]   # gold, silver, bronze
+
+
+def plain(name, width=20):
+    """Show a player name as plain text: no Discord formatting, no mentions."""
+    name = "".join(ch if ch.isprintable() else " " for ch in str(name)).strip() or "unknown"
+    if len(name) > width:
+        name = name[: width - 1] + "…"
+    for ch in "\\*_~`|>[]()#":
+        name = name.replace(ch, "\\" + ch)
+    return name.replace("@", "@\u200b")
+
+
+def board(rows, names, limit=2800):
+    """Numbered list. Each player gets a bold name line (with a medal for the top
+    three) and two indented detail lines: time and days, then the last day seeded."""
+    out, used = [], 0
+    for rank, (pid, secs, ndays, last) in enumerate(rows[:TOP], 1):
         m = int(secs // 60)
-        lines.append(f"{rank:>2}  {name:<22} {f'{m // 60}h {m % 60:02d}m':>9}")
-    if not rows:
-        lines.append("No seeding time recorded yet.")
-    return "```\n" + "\n".join(lines) + "\n```"
+        medal = " " + MEDALS[rank - 1] if rank <= 3 else ""
+        # Noon UTC, so the date chip shows the same calendar day across the Americas.
+        when = int(datetime.strptime(last, "%Y-%m-%d").replace(hour=12, tzinfo=timezone.utc).timestamp())
+        entry = (f"**{rank}. {plain(names.get(pid, 'unknown'), 32)}**{medal}\n"
+                 f"> {m // 60}h {m % 60:02d}m seeding over {ndays} day{'' if ndays == 1 else 's'}\n"
+                 f"> Last seeded <t:{when}:D>")
+        if used + len(entry) + 1 > limit:
+            break
+        out.append(entry)
+        used += len(entry) + 1
+    return "\n".join(out) or "No seeding time recorded yet."
 
 
 def discord(method, url, body):
@@ -264,16 +288,21 @@ def main():
     last30, alltime = totals(data["days"], since30), totals(data["days"])
     rule = f"Time on an RLG server while it had {LOW} to {HIGH} players. Both servers count."
     embeds = [
-        {"title": "Seederboard: last 30 days",
-         "description": f"{rule}\n{table(last30, shown)}{len(last30)} players helped seed."},
-        {"title": "Seederboard: all time",
-         "description": f"Counted since {START.strftime('%B %d, %Y').replace(' 0', ' ')}.\n"
-                        f"{table(alltime, shown)}{len(alltime)} players helped seed.\n"
-                        f"Source: BattleMetrics. Updated <t:{int(time.time())}:R>"},
+        {"title": "Seederboard: Last 30 Days",
+         "description": f"{rule}\n\n{board(last30, shown)}",
+         "color": 0xF1C40F,
+         "footer": {"text": f"{len(last30):,} players helped seed in the last 30 days"}},
+        {"title": "Seederboard: All Time",
+         "description": board(alltime, shown),
+         "color": 0xF1C40F,
+         "footer": {"text": f"{len(alltime):,} players since {START.strftime('%B %d, %Y').replace(' 0', ' ')}"
+                            " · Source: BattleMetrics · Updated"},
+         "timestamp": datetime.now(timezone.utc).isoformat()},
     ]
     if DRY_RUN:
         for e in embeds:
             print(e["title"] + "\n" + e["description"] + "\n")
+            print(e["footer"]["text"], f"({len(e['description'])} characters)\n")
         return
     payload = {"embeds": embeds, "allowed_mentions": {"parse": []}}
     try:
