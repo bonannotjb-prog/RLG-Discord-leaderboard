@@ -49,13 +49,17 @@ jobs:
       - name: Post or update the message once
         run: python status.py --once
 
-      - name: Save the message id (first run only)
+      - name: Save state (message id and weekly heartbeat)
         run: |
+          # Weekly heartbeat: this file changes once a week, so the repository always
+          # has a recent commit and GitHub never pauses the schedule for inactivity.
+          mkdir -p state
+          date -u +%G-W%V > state/heartbeat-status.txt
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           if [ -n "$(git status --porcelain state)" ]; then
             git add state
-            git commit -m "Save Discord status message id"
+            git commit -m "Save Discord status state"
             git pull --rebase
             git push
           fi
