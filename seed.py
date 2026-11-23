@@ -65,14 +65,20 @@ def _save():
              for sid, st in _state.items()}
     with open(STATE_FILE, "w", encoding="utf-8") as f:
         json.dump(saved, f, indent=1, sort_keys=True)
+    commit_state("Update seeding alert state")
+
+
+def commit_state(message):
+    """On GitHub, commit everything in state/ back to the repository so the next
+    job starts from it. Does nothing when run anywhere else."""
     if os.environ.get("GITHUB_ACTIONS") != "true":
         return
     for cmd in (["git", "add", "state"],
-                ["git", "commit", "-q", "-m", "Update seeding alert state"],
+                ["git", "commit", "-q", "-m", message],
                 ["git", "pull", "-q", "--rebase"],
                 ["git", "push", "-q"]):
         if subprocess.run(cmd, cwd=HERE, capture_output=True).returncode != 0:
-            break  # not fatal: worst case is one repeated ping after a job handover
+            break  # not fatal: it is tried again at the next save
 
 
 def _short(name):

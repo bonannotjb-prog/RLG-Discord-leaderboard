@@ -219,8 +219,17 @@ def update(last_fingerprint, last_sent, alerts=False):
     columns = [build_column(sid) for sid in SERVER_IDS[:10]]
     if alerts and not DRY_RUN:
         for sid, (_, _, status, _) in zip(SERVER_IDS, columns):
-            seed.check(sid, status, f"{ORIGIN}/s/{sid}", http)
-            recap.check(sid, get_matches(sid), short_name((status or {}).get("name")), ORIGIN, http)
+            # A problem in the alerts or recaps must never stop the status card.
+            for label, job in (
+                ("Seeding alert", lambda: seed.check(sid, status, f"{ORIGIN}/s/{sid}", http)),
+                ("Match recap", lambda: recap.check(sid, get_matches(sid),
+                                                    short_name((status or {}).get("name")), ORIGIN, http)),
+            ):
+                try:
+                    job()
+                except Exception as e:  # noqa: BLE001 - report it and keep going
+                    detail = f"HTTP {e.code}" if isinstance(e, urllib.error.HTTPError) else f"{type(e).__name__}: {e}"
+                    print(f"{label} problem on {sid[:8]} ({detail}); carrying on.", flush=True)
     embed, fingerprint = build_card(columns)
     if fingerprint == last_fingerprint and time.time() - last_sent < HEARTBEAT:
         return last_fingerprint, last_sent  # nothing changed, skip the edit
