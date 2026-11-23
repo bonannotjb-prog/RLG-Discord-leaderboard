@@ -148,6 +148,10 @@ def check(server_id, matches, server_name, origin, http):
             http("POST", WEBHOOK + "?wait=true",
                  {"embeds": [_embed(m, detail, server_name, page)], "allowed_mentions": {"parse": []}})
             print(f"Recap posted for match {m['id']} on {server_name}.", flush=True)
+            # Remember what was posted live, so the one-time backfill never repeats it.
+            posted = state.setdefault("_posted", {}).setdefault(server_id, [])
+            posted.append(m["id"])
+            del posted[:-300]
         state[server_id] = m["id"]
     if fresh:
         _save()
