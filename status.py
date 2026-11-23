@@ -27,10 +27,12 @@ import urllib.parse
 import urllib.request
 from datetime import datetime
 
+import seed
+
 ORIGIN = os.environ.get("WARCON_ORIGIN", "https://console.warcon.app").rstrip("/")
 SERVER_IDS = [s.strip() for s in os.environ.get("WARCON_SERVER_IDS", "").split(",") if s.strip()]
 WEBHOOK = os.environ.get("DISCORD_STATUS_WEBHOOK_URL", "").strip()
-INTERVAL = max(10, int(os.environ.get("STATUS_INTERVAL", "20")))
+INTERVAL = max(int(os.environ.get("STATUS_MIN_INTERVAL", "10")), int(os.environ.get("STATUS_INTERVAL", "20")))
 RUN_MINUTES = float(os.environ.get("STATUS_RUN_MINUTES", "330"))
 HEARTBEAT = 120  # edit at least this often even if nothing changed, so "checked" stays fresh
 DRY_RUN = os.environ.get("DRY_RUN") == "1"
@@ -67,8 +69,9 @@ def unix(iso):
 
 
 def build_embed(server_id):
-    """Returns (embed, fingerprint). The fingerprint leaves out timestamps, so it only
-    changes when something a player would care about changes."""
+    """Returns (embed, fingerprint, status). The fingerprint leaves out timestamps, so
+    it only changes when something a player would care about changes. status is the
+    raw Warcon status, or None if it could not be read."""
     page = f"{ORIGIN}/s/{server_id}"
     try:
         s = http("GET", f"{ORIGIN}/api/public/servers/{server_id}").get("server", {})
@@ -76,7 +79,7 @@ def build_embed(server_id):
         code = getattr(e, "code", None)
         why = f"HTTP {code}" if code else "no answer"
         body = f"**Status unavailable** (Warcon gave {why}). Will retry."
-        return {"title": "Server status", "url": page, "description": body}, body
+        return {"title": "Server status", "url": page, "description": body}, body, None
 
     up = bool(s.get("ok"))
     players, cap = s.get("players") or 0, s.get("maxPlayers") or 0
@@ -118,7 +121,7 @@ def build_embed(server_id):
         "url": page,
         "description": "\n".join(lines)[:4096],
     }
-    return embed, embed["title"] + "\n" + fingerprint
+    return embed, embed["title"] + "\n" + fingerprint, s
 
 
 def read_message_id():
@@ -150,12 +153,15 @@ def send(payload):
     return "posted new"
 
 
-def update(last_fingerprint, last_sent):
+def update(last_fingerprint, last_sent, alerts=False):
     built = [build_embed(sid) for sid in SERVER_IDS[:10]]
-    fingerprint = "\n---\n".join(fp for _, fp in built)
+    if alerts and not DRY_RUN:
+        for sid, (_, _, status) in zip(SERVER_IDS, built):
+            seed.check(sid, status, f"{ORIGIN}/s/{sid}", http)
+    fingerprint = "\n---\n".join(fp for _, fp, _ in built)
     if fingerprint == last_fingerprint and time.time() - last_sent < HEARTBEAT:
         return last_fingerprint, last_sent  # nothing changed, skip the edit
-    payload = {"embeds": [e for e, _ in built], "allowed_mentions": {"parse": []}}
+    payload = {"embeds": [e for e, _, _ in built], "allowed_mentions": {"parse": []}}
     if DRY_RUN:
         for e in payload["embeds"]:
             print(e["title"] + "\n" + e["description"] + "\n")
@@ -179,7 +185,7 @@ def main():
     while time.time() < deadline:
         started = time.time()
         try:
-            fingerprint, sent = update(fingerprint, sent)
+            fingerprint, sent = update(fingerprint, sent, alerts=True)
             failures = 0
         except urllib.error.HTTPError as e:
             failures += 1
