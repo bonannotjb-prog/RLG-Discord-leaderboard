@@ -27,6 +27,7 @@ import urllib.parse
 import urllib.request
 from datetime import datetime
 
+import recap
 import seed
 
 ORIGIN = os.environ.get("WARCON_ORIGIN", "https://console.warcon.app").rstrip("/")
@@ -88,23 +89,27 @@ def short_name(full):
     return full or "Server"
 
 
-_match_cache = {}   # server id -> (time checked, start of the current match as unix time)
+_match_cache = {}   # server id -> (time checked, newest matches from Warcon)
+
+
+def get_matches(server_id):
+    """The server's newest matches from Warcon, looked up at most once a minute.
+    Returns the last list it got if Warcon cannot be read."""
+    checked, matches = _match_cache.get(server_id, (0, []))
+    if time.time() - checked < 60:
+        return matches
+    try:
+        matches = http("GET", f"{ORIGIN}/api/public/servers/{server_id}/matches").get("matches") or []
+    except (urllib.error.URLError, TimeoutError, ValueError, AttributeError):
+        pass  # keep the last known list
+    _match_cache[server_id] = (time.time(), matches)
+    return matches
 
 
 def match_started(server_id):
-    """When the match now running began, from Warcon's match list (the entry with
-    no end time). Looked up at most once a minute per server; None if unknown."""
-    checked, value = _match_cache.get(server_id, (0, None))
-    if time.time() - checked < 60:
-        return value
-    try:
-        matches = http("GET", f"{ORIGIN}/api/public/servers/{server_id}/matches").get("matches") or []
-        current = next((m for m in matches if not m.get("endedAt")), None)
-        value = unix(current.get("startedAt")) if current else None
-    except (urllib.error.URLError, TimeoutError, ValueError, AttributeError):
-        pass  # keep the last known value
-    _match_cache[server_id] = (time.time(), value)
-    return value
+    """When the match now running began (the entry with no end time), or None."""
+    current = next((m for m in get_matches(server_id) if not m.get("endedAt")), None)
+    return unix(current.get("startedAt")) if current else None
 
 
 def build_column(server_id):
@@ -215,6 +220,7 @@ def update(last_fingerprint, last_sent, alerts=False):
     if alerts and not DRY_RUN:
         for sid, (_, _, status, _) in zip(SERVER_IDS, columns):
             seed.check(sid, status, f"{ORIGIN}/s/{sid}", http)
+            recap.check(sid, get_matches(sid), short_name((status or {}).get("name")), ORIGIN, http)
     embed, fingerprint = build_card(columns)
     if fingerprint == last_fingerprint and time.time() - last_sent < HEARTBEAT:
         return last_fingerprint, last_sent  # nothing changed, skip the edit

@@ -1,0 +1,153 @@
+"""Match recaps: post a summary to Discord each time a match ends.
+
+Used by status.py, which already reads each server's match list once a minute.
+Nothing here runs unless DISCORD_RECAP_WEBHOOK_URL is set.
+
+How it works:
+  - The first time it sees a server it only notes the newest finished match, so
+    it never floods the channel with old matches.
+  - After that, every newly finished match gets one new message, unless fewer
+    than RECAP_MIN_PLAYERS people played in it (empty-server matches are skipped).
+  - The id of the last match handled is kept in state/recaps.json.
+
+Settings (environment variables, set in .github/workflows/status.yml):
+  DISCORD_RECAP_WEBHOOK_URL  webhook on the recaps channel, kept as a GitHub secret
+  RECAP_MIN_PLAYERS          fewest players in a match for it to get a recap (default 10)
+  RECAP_TOP                  players listed in the recap, 1-10 (default 5)
+"""
+import json
+import os
+import re
+import urllib.error
+from datetime import datetime
+
+import seed
+
+WEBHOOK = os.environ.get("DISCORD_RECAP_WEBHOOK_URL", "").strip()
+MIN_PLAYERS = int(os.environ.get("RECAP_MIN_PLAYERS", "10"))
+TOP = max(1, min(10, int(os.environ.get("RECAP_TOP", "5"))))
+HERE = os.path.dirname(os.path.abspath(__file__))
+STATE_FILE = os.path.join(HERE, "state", "recaps.json")
+MEDALS = ["\U0001F947", "\U0001F948", "\U0001F949"]
+
+_state = None
+
+
+def enabled():
+    return bool(WEBHOOK)
+
+
+def _load():
+    global _state
+    if _state is None:
+        try:
+            with open(STATE_FILE, encoding="utf-8") as f:
+                _state = json.load(f)
+        except (FileNotFoundError, ValueError):
+            _state = {}
+    return _state
+
+
+def _save():
+    os.makedirs(os.path.dirname(STATE_FILE), exist_ok=True)
+    with open(STATE_FILE, "w", encoding="utf-8") as f:
+        json.dump(_state, f, indent=1, sort_keys=True)
+    seed.commit_state("Update match recap state")
+
+
+def _words(text):
+    """Moscow_KOTH_01+KOTH_InfantryOnly -> Moscow KOTH 01, KOTH Infantry Only"""
+    parts = re.split(r"[+,]", str(text or ""))
+    return ", ".join(re.sub(r"(?<=[a-z0-9])(?=[A-Z])", " ", p).replace("_", " ").strip() for p in parts if p)
+
+
+def _plain(name, width=28):
+    name = "".join(ch if ch.isprintable() else " " for ch in str(name)).strip() or "unknown"
+    if len(name) > width:
+        name = name[: width - 1] + "…"
+    for ch in "\\*_~`|>[]()#":
+        name = name.replace(ch, "\\" + ch)
+    return name.replace("@", "@​")
+
+
+def _count(n, word):
+    return f"{n} {word}" + ("" if n == 1 else "s")
+
+
+def _length(start, end):
+    try:
+        a = datetime.fromisoformat(str(start).replace("Z", "+00:00"))
+        b = datetime.fromisoformat(str(end).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    m = max(0, int((b - a).total_seconds() // 60))
+    return f"{m // 60}h {m % 60:02d}m" if m >= 60 else f"{m}m"
+
+
+def _embed(m, detail, server_name, page):
+    """page is the server's public Warcon page, used for the title link."""
+    scores = sorted(m.get("finalScores") or [], key=lambda f: -f.get("score", 0))
+    winner = m.get("winner")
+    headline = f"\U0001F3C6 **{winner} wins**" if winner else "**Match ended with no winner**"
+    lines = [headline]
+    if scores:
+        lines.append(" · ".join(f"{f.get('name')} **{f.get('score', 0)}**" for f in scores))
+    facts = []
+    length = _length(m.get("startedAt"), m.get("endedAt"))
+    if length:
+        facts.append(f"⏱️ {length}")
+    facts.append(f"\U0001F465 {m.get('players', 0)} players (peak {m.get('peakPlayers', 0)} at once)")
+    lines.append(" · ".join(facts))
+    if m.get("experiences"):
+        lines.append(f"\U0001F3AE {_words(m['experiences'])}")
+    embed = {
+        "title": f"\U0001F3C1 Match recap: {server_name} · {_words(m.get('map')) or 'Unknown map'}"[:256],
+        "url": f"{page}/matches",
+        "description": "\n".join(lines),
+        "color": 0x3498DB,
+        "fields": [],
+        "timestamp": m.get("endedAt"),
+        "footer": {"text": "Match ended"},
+    }
+    rows = sorted((detail or {}).get("lines") or [], key=lambda r: (-r.get("kills", 0), r.get("deaths", 0)))
+    top = []
+    for i, r in enumerate(rows[:TOP], 1):
+        medal = MEDALS[i - 1] if i <= 3 else f"`{i:>2}`"
+        side = f" ({r['faction']})" if r.get("faction") else ""
+        top.append(f"{medal} **{_plain(r.get('name'))}**{side} · {_count(r.get('kills', 0), 'kill')}, {_count(r.get('deaths', 0), 'death')}")
+    if top:
+        embed["fields"].append({"name": "⭐ Top players", "value": "\n".join(top)[:1024], "inline": False})
+    awards = [f"**{a.get('label')}:** {_plain(a.get('name'))} ({a.get('value')})"
+              for a in (detail or {}).get("awards") or [] if a.get("name")]
+    if awards:
+        embed["fields"].append({"name": "\U0001F396️ Awards", "value": "\n".join(awards)[:1024], "inline": False})
+    return embed
+
+
+def check(server_id, matches, server_name, origin, http):
+    """Call with the server's newest matches, as Warcon returns them. origin is
+    the Warcon address, for example https://console.warcon.app."""
+    page = f"{origin}/s/{server_id}"
+    if not enabled() or not matches:
+        return
+    ended = sorted((m for m in matches if m.get("endedAt") and m.get("id") is not None), key=lambda m: m["id"])
+    if not ended:
+        return
+    state = _load()
+    if server_id not in state:
+        state[server_id] = ended[-1]["id"]   # first look: start from here, post nothing old
+        _save()
+        return
+    fresh = [m for m in ended if m["id"] > state[server_id]]
+    for m in fresh:
+        if (m.get("players") or 0) >= MIN_PLAYERS:
+            try:
+                detail = http("GET", f"{origin}/api/public/servers/{server_id}/matches/{m['id']}")
+            except (urllib.error.URLError, TimeoutError, ValueError):
+                detail = None   # still post the result, just without the player list
+            http("POST", WEBHOOK + "?wait=true",
+                 {"embeds": [_embed(m, detail, server_name, page)], "allowed_mentions": {"parse": []}})
+            print(f"Recap posted for match {m['id']} on {server_name}.", flush=True)
+        state[server_id] = m["id"]
+    if fresh:
+        _save()
