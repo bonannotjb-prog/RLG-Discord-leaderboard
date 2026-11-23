@@ -1,0 +1,88 @@
+name: Growth page weekly update
+
+on:
+  schedule:
+    # Mondays at 11:37 UTC: 6:37 AM Eastern, 4:37 AM Phoenix. A second try two
+    # hours later covers a skipped run; a week that is already built is not rebuilt.
+    - cron: "37 11 * * 1"
+    - cron: "37 13 * * 1"
+  workflow_dispatch:      # the "Run workflow" button
+    inputs:
+      force:
+        description: "Rebuild even if the data is already up to date"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write         # saves the rebuilt data files
+  pages: write            # publishes the page
+  id-token: write
+
+concurrency:
+  group: growth-page
+  cancel-in-progress: false
+
+jobs:
+  growth:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Check whether the data is already up to date
+        id: check
+        env:
+          FORCE: ${{ inputs.force && '1' || '0' }}
+        run: |
+          python - <<'PY' >> "$GITHUB_OUTPUT"
+          import json, os
+          from datetime import datetime, timedelta
+          from zoneinfo import ZoneInfo
+          yesterday = (datetime.now(ZoneInfo("America/New_York")) - timedelta(days=1)).date().isoformat()
+          try: have = json.load(open("docs/data/status.json"))["rows"][0]["data_through"]
+          except Exception: have = ""
+          print("build=" + ("1" if os.environ["FORCE"] == "1" or have < yesterday else "0"))
+          PY
+
+      - name: Pull the data and rebuild every figure
+        if: steps.check.outputs.build == '1'
+        env:
+          BM_TOKEN: ${{ secrets.BATTLEMETRICS_TOKEN }}
+          WC_KEY: ${{ secrets.WARCON_API_KEY }}
+          GROWTH_ADMINS_JSON: ${{ secrets.GROWTH_ADMINS_JSON }}
+          SITE_DATA: docs/data
+        run: |
+          mkdir -p "$RUNNER_TEMP/work"
+          cp docs/data/history.json "$RUNNER_TEMP/work/prev_history.json"
+          printf '%s' "$GROWTH_ADMINS_JSON" > "$RUNNER_TEMP/admins.json"
+          GROWTH_ADMINS_FILE="$RUNNER_TEMP/admins.json" python growth/pipeline/refresh.py "$RUNNER_TEMP/work"
+          rm -f "$RUNNER_TEMP/admins.json"
+
+      - name: Save the rebuilt data
+        if: steps.check.outputs.build == '1'
+        run: |
+          if [ -n "$(git status --porcelain docs/data)" ]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add docs/data
+            git commit -m "Update growth page data"
+            git pull --rebase
+            git push
+          fi
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: docs
+
+      - name: Publish the page
+        id: deploy
+        uses: actions/deploy-pages@v4
