@@ -35,6 +35,7 @@ jobs:
       - name: Post the recap
         env:
           DISCORD_RECAP_WEBHOOK_URL: ${{ secrets.DISCORD_RECAP_WEBHOOK_URL }}
-          WARCON_SERVER_ID: ${{ inputs.server == 'INF #2' && '2dd77c71-dbb6-49c4-95cf-78625467aba1' || '230a2cb3-e2af-450d-a1e1-515b08139d3d' }}
+          # Quoted on purpose: an unquoted " #" would start a comment.
+          WARCON_SERVER_ID: "${{ startsWith(inputs.server, 'INF') && '2dd77c71-dbb6-49c4-95cf-78625467aba1' || '230a2cb3-e2af-450d-a1e1-515b08139d3d' }}"
           MATCH_ID: ${{ inputs.match_id }}
         run: python recap_one.py
