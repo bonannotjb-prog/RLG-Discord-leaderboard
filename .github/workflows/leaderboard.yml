@@ -28,8 +28,9 @@ jobs:
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
           # One id per server, separated by commas. Each server gets its own panel
-          # in the same message. This one is [RLG] Redline Gaming [Vanilla] #1.
-          WARCON_SERVER_IDS: "230a2cb3-e2af-450d-a1e1-515b08139d3d"
+          # in the same message, in this order. First is [RLG] Redline Gaming
+          # [Vanilla] #1; second is the other RLG server.
+          WARCON_SERVER_IDS: "230a2cb3-e2af-450d-a1e1-515b08139d3d,2dd77c71-dbb6-49c4-95cf-78625467aba1"
           LB_RANGE: "all"      # current | 7d | 30d | 90d | all
           LB_SORT: "kills"         # kills | kd | perHour | playtime | seeded | matches | wins | winRate | cash
           LB_MIN_MINUTES: "60"
