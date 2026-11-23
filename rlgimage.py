@@ -31,8 +31,28 @@ except ImportError:
     from PIL import Image, ImageDraw, ImageEnhance, ImageFilter, ImageFont
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-ASSETS = os.path.join(HERE, "assets")
-FONTS = os.path.join(ASSETS, "fonts")
+# Where artwork and fonts are looked for, in order. The intended place is
+# assets/ and assets/fonts/, but files uploaded loose beside the scripts work too.
+SEARCH = [os.path.join(HERE, "assets", "fonts"), os.path.join(HERE, "assets"),
+          os.path.join(HERE, "fonts"), HERE]
+
+
+def _find(name):
+    """Full path of an artwork or font file, or None if it is not in the repository."""
+    for folder in SEARCH:
+        path = os.path.join(folder, name)
+        if os.path.isfile(path):
+            return path
+    return None
+
+
+def _need(name):
+    path = _find(name)
+    if not path:
+        raise SystemExit(
+            f"Font file {name} is missing from the repository. Upload the whole 'assets' folder "
+            "from the zip (it holds a 'fonts' folder with ten .ttf files, banner.jpg and icon.png).")
+    return path
 
 # Colours taken from the RLG banner and icon.
 BG = (11, 11, 13)
@@ -65,7 +85,7 @@ _cmaps, _fonts = {}, {}
 
 def _cmap(name):
     if name not in _cmaps:
-        _cmaps[name] = set(TTFont(os.path.join(FONTS, name), lazy=True).getBestCmap())
+        _cmaps[name] = set(TTFont(_need(name), lazy=True).getBestCmap())
     return _cmaps[name]
 
 
@@ -73,7 +93,7 @@ def _font(name, size):
     if (name, size) not in _fonts:
         # DejaVu looks larger than the condensed faces at the same size.
         scale = 0.80 if name.startswith("DejaVu") else 1.0
-        _fonts[(name, size)] = ImageFont.truetype(os.path.join(FONTS, name), round(size * scale))
+        _fonts[(name, size)] = ImageFont.truetype(_need(name), round(size * scale))
     return _fonts[(name, size)]
 
 
@@ -126,36 +146,44 @@ def text(draw, x, y, value, style, size, fill, align="left", spacing=0, max_widt
 
 def _header(canvas, title, subtitle, online, kicker="REDLINE GAMING"):
     """Banner artwork across the top, darkened on the left so the title reads clearly."""
-    banner = Image.open(os.path.join(ASSETS, "banner.jpg")).convert("RGB")
-    bw, bh = banner.size
-    # Use the right-hand part of the banner (control tower, hangar and the REDLINE
-    # flag on the wall), not the centre logo, which is already shown as the icon.
-    region = banner.crop((int(bw * 0.56), 0, bw, bh))
-    scale = max(W / region.width, HEADER_H / region.height)
-    region = region.resize((round(region.width * scale), round(region.height * scale)), Image.LANCZOS)
-    top = int((region.height - HEADER_H) * 0.07)
-    region = region.crop((0, top, W, top + HEADER_H))
-    region = ImageEnhance.Brightness(region.filter(ImageFilter.GaussianBlur(0.8))).enhance(0.9)
-    # Fade to near-black toward the left and the bottom.
-    fade = Image.new("L", (W, HEADER_H), 0)
-    fd = ImageDraw.Draw(fade)
-    for x in range(W):
-        fd.line([(x, 0), (x, HEADER_H)], fill=int(240 * max(0.0, 1 - x / (W * 0.74)) ** 0.9))
-    canvas.paste(Image.composite(Image.new("RGB", (W, HEADER_H), BG), region, fade), (0, 0))
-    bottom = Image.new("L", (W, HEADER_H), 0)
-    bd = ImageDraw.Draw(bottom)
-    for y in range(HEADER_H):
-        bd.line([(0, y), (W, y)], fill=int(215 * max(0.0, (y - HEADER_H * 0.5) / (HEADER_H * 0.5)) ** 1.4))
-    canvas.paste(Image.new("RGB", (W, HEADER_H), BG), (0, 0), bottom)
+    banner_path = _find("banner.jpg")
+    if banner_path:
+        banner = Image.open(banner_path).convert("RGB")
+        bw, bh = banner.size
+        # Use the right-hand part of the banner (control tower, hangar and the REDLINE
+        # flag on the wall), not the centre logo, which is already shown as the icon.
+        region = banner.crop((int(bw * 0.56), 0, bw, bh))
+        scale = max(W / region.width, HEADER_H / region.height)
+        region = region.resize((round(region.width * scale), round(region.height * scale)), Image.LANCZOS)
+        top = int((region.height - HEADER_H) * 0.07)
+        region = region.crop((0, top, W, top + HEADER_H))
+        region = ImageEnhance.Brightness(region.filter(ImageFilter.GaussianBlur(0.8))).enhance(0.9)
+        # Fade to near-black toward the left and the bottom.
+        fade = Image.new("L", (W, HEADER_H), 0)
+        fd = ImageDraw.Draw(fade)
+        for x in range(W):
+            fd.line([(x, 0), (x, HEADER_H)], fill=int(240 * max(0.0, 1 - x / (W * 0.74)) ** 0.9))
+        canvas.paste(Image.composite(Image.new("RGB", (W, HEADER_H), BG), region, fade), (0, 0))
+        bottom = Image.new("L", (W, HEADER_H), 0)
+        bd = ImageDraw.Draw(bottom)
+        for y in range(HEADER_H):
+            bd.line([(0, y), (W, y)], fill=int(215 * max(0.0, (y - HEADER_H * 0.5) / (HEADER_H * 0.5)) ** 1.4))
+        canvas.paste(Image.new("RGB", (W, HEADER_H), BG), (0, 0), bottom)
+    else:
+        print("banner.jpg is missing from the repository; drawing a plain header.", flush=True)
 
     draw = ImageDraw.Draw(canvas)
     icon_size = 170
-    icon = Image.open(os.path.join(ASSETS, "icon.png")).convert("RGB").resize((icon_size, icon_size), Image.LANCZOS)
     ix, iy = PAD, (HEADER_H - icon_size) // 2
-    canvas.paste(icon, (ix, iy))
-    draw.rectangle([ix - 2, iy - 2, ix + icon_size + 1, iy + icon_size + 1], outline=(70, 70, 76), width=2)
-
-    tx = ix + icon_size + 36
+    icon_path = _find("icon.png")
+    if icon_path:
+        icon = Image.open(icon_path).convert("RGB").resize((icon_size, icon_size), Image.LANCZOS)
+        canvas.paste(icon, (ix, iy))
+        draw.rectangle([ix - 2, iy - 2, ix + icon_size + 1, iy + icon_size + 1], outline=(70, 70, 76), width=2)
+        tx = ix + icon_size + 36
+    else:
+        print("icon.png is missing from the repository; leaving the icon out.", flush=True)
+        tx = PAD
     text(draw, tx, 62, kicker.upper(), "semi", 30, RED, spacing=7)
     text(draw, tx, 124, title.upper(), "title", 98, WHITE, max_width=W - tx - PAD - 250)
     text(draw, tx, 190, subtitle.upper(), "semi", 30, SOFT, spacing=3)
