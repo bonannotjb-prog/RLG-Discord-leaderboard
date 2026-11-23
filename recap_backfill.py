@@ -27,13 +27,14 @@ import urllib.parse
 import urllib.request
 
 import recap
+import rlgpost
 
 ORIGIN = os.environ.get("WARCON_ORIGIN", "https://console.warcon.app").rstrip("/")
 SERVER_IDS = [s.strip() for s in os.environ.get("WARCON_SERVER_IDS", "").split(",") if s.strip()]
 WEBHOOK = recap.WEBHOOK
 COUNT_ONLY = os.environ.get("COUNT_ONLY") in ("1", "true")
 FORCE = os.environ.get("FORCE") in ("1", "true")
-PAUSE = float(os.environ.get("BACKFILL_PAUSE", "2.2"))   # seconds between posts (Discord allows 30 a minute)
+PAUSE = float(os.environ.get("BACKFILL_PAUSE", "2.4"))   # seconds between posts (Discord allows 30 a minute)
 HERE = os.path.dirname(os.path.abspath(__file__))
 DONE_FILE = os.path.join(HERE, "state", "recaps_backfilled.txt")
 UA = "rlg-recap-backfill/1.0 (GitHub Actions; Discord webhook)"
@@ -110,7 +111,7 @@ def main():
         print(f"{short}: {len(ended)} finished matches, {len(picked)} to recap", flush=True)
         todo += [(m["endedAt"], sid, short, m) for m in picked]
     todo.sort(key=lambda t: t[0])
-    minutes = len(todo) * (PAUSE + 0.6) / 60
+    minutes = len(todo) * (PAUSE + 1.6) / 60
     print(f"{len(todo)} recaps in total, oldest {todo[0][0][:10] if todo else 'n/a'}. "
           f"About {minutes:.0f} minutes to post.", flush=True)
     if COUNT_ONLY:
@@ -125,8 +126,11 @@ def main():
             detail = json.load(detail)
         except (OSError, ValueError):
             detail = None   # post the result without the player list
-        http("POST", WEBHOOK + "?wait=true",
-             {"embeds": [recap._embed(m, detail, short, f"{ORIGIN}/s/{sid}")], "allowed_mentions": {"parse": []}})
+        png, text, filename = recap.build(m, detail, short, f"{ORIGIN}/s/{sid}")
+        try:
+            rlgpost.post_image(WEBHOOK, png, filename, text)
+        except urllib.error.HTTPError as e:
+            sys.exit(rlgpost.describe(e))
         if n % 25 == 0 or n == len(todo):
             print(f"  posted {n} of {len(todo)}", flush=True)
         time.sleep(PAUSE)

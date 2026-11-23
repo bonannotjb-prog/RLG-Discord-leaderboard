@@ -1,8 +1,8 @@
-"""Keep one Discord message showing the Warcon public leaderboard, edited in place.
+"""Keep a Discord picture of the Warcon leaderboard for each server, replaced in place.
 
-Reads the public leaderboard JSON (no key needed) and posts it through a Discord
-webhook. The first run posts a new message and saves its id in state/; every
-later run edits that same message.
+Reads the public leaderboard JSON (no key needed), draws it with rlgimage.py and
+posts it through a Discord webhook: one message per server. The first run posts
+the messages and saves their ids in state/; every later run swaps the picture.
 
 Settings come from environment variables (set in .github/workflows/leaderboard.yml):
   DISCORD_WEBHOOK_URL  required, kept as a GitHub secret
@@ -12,16 +12,20 @@ Settings come from environment variables (set in .github/workflows/leaderboard.y
   LB_SORT              kills | deaths | kd | perHour | playtime | seeded |
                        matches | wins | winRate | cash    (default kills)
   LB_MIN_MINUTES       playtime floor to appear on the board (default 60)
-  LB_TOP               players to show per server, 1-25    (default 10)
-  DRY_RUN              set to 1 to print the message instead of sending it
+  LB_TOP               players per server, 1-15            (default 10)
+  DRY_RUN              set to 1 to save the pictures to disk instead of posting
 """
 import json
 import os
+import re
 import sys
 import time
 import urllib.error
 import urllib.parse
 import urllib.request
+
+import rlgimage
+import rlgpost
 
 ORIGIN = os.environ.get("WARCON_ORIGIN", "https://console.warcon.app").rstrip("/")
 SERVER_IDS = [s.strip() for s in os.environ.get("WARCON_SERVER_IDS", "").split(",") if s.strip()]
@@ -29,9 +33,10 @@ WEBHOOK = os.environ.get("DISCORD_WEBHOOK_URL", "").strip()
 RANGE = os.environ.get("LB_RANGE", "current")
 SORT = os.environ.get("LB_SORT", "kills")
 MIN_MINUTES = os.environ.get("LB_MIN_MINUTES", "60")
-TOP = max(1, min(25, int(os.environ.get("LB_TOP", "10"))))
+TOP = max(1, min(15, int(os.environ.get("LB_TOP", "10"))))
 DRY_RUN = os.environ.get("DRY_RUN") == "1"
-STATE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "state", "message_id.txt")
+STATE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "state", "message_id.txt")   # older card version
+IDS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "state", "leaderboard_messages.json")
 UA = "rlg-leaderboard-bot/1.0 (GitHub Actions; Discord webhook)"
 
 RANGE_LABEL = {"current": "This season", "7d": "Last 7 days", "30d": "Last 30 days",
@@ -57,116 +62,73 @@ def get_json(path, params=None):
     return http("GET", url)
 
 
-def cell(name, width):
-    """A player name that is safe inside a code block and never wraps its column."""
-    name = "".join(ch if ch.isprintable() else " " for ch in str(name or "unknown")).replace("`", "'").strip()
-    return name if len(name) <= width else name[: width - 1] + "…"
+def short_name(full):
+    """'[RLG] Redline Gaming [Vanilla] #1 - discord.gg/...' -> 'Vanilla #1'"""
+    full = str(full or "").split(" - ")[0].strip()
+    m = re.search(r"\[(?!RLG\])([^\]]+)\]\s*(#\d+)?", full)
+    if m:
+        return (m.group(1) + (" " + m.group(2) if m.group(2) else "")).strip()
+    return full or "Server"
 
 
-def block(lines):
-    return "```\n" + "\n".join(lines) + "\n```"
-
-
-NAME_WIDTH = 21   # characters of the player name shown; the column is this plus the rank
-
-
-def build_embed(server_id):
-    """One card per server, laid out as two columns that sit side by side: a wide
-    player column, and one stats column (kills, deaths, K/D, wins, hours). Each
-    column gets half the card, which fits about 26 characters without wrapping."""
+def build(server_id):
+    """Returns (picture as PNG bytes, text shown under it, file name)."""
     status = get_json(f"/api/public/servers/{server_id}").get("server", {})
     board = get_json(f"/api/public/servers/{server_id}/leaderboard",
                      {"range": RANGE, "sort": SORT, "minMinutes": MIN_MINUTES})
     rows = board.get("rows", [])[:TOP]
-    players, stats = [], []
-    for i, r in enumerate(rows, 1):
-        kills, deaths = r.get("kills", 0), r.get("deaths", 0)
-        kd = kills / deaths if deaths else float(kills)
-        players.append(f"{r.get('rank', i):>2} {cell(r.get('name'), NAME_WIDTH)}")
-        stats.append([str(kills), str(deaths), f"{kd:.2f}" if kd < 100 else f"{kd:.0f}",
-                      str(r.get("wins", 0)), f"{r.get('minutes', 0) / 60:.1f}"])
-    # Each number column is only as wide as its longest value, to save room.
-    widths = [max(len(row[c]) for row in stats) for c in range(5)] if stats else []
-    numbers = [" ".join(v.rjust(w) for v, w in zip(row, widths)) for row in stats]
-
-    page = f"{ORIGIN}/s/{server_id}/leaderboard"
-    name = str(status.get("name") or "Leaderboard").split(" - ")[0].strip()
+    name = short_name(status.get("name"))
     online = f"{status.get('players', '?')}/{status.get('maxPlayers', '?')} online"
-    where = f" on {status['map']}" if status.get("map") else ""
-    embed = {
-        "title": f"\u2694\ufe0f Top {len(rows) or TOP}: {name} \u2694\ufe0f"[:256],
-        "url": page,
-        "description": (f"{RANGE_LABEL.get(RANGE, RANGE)}, ranked by {SORT_LABEL.get(SORT, SORT)} "
-                        f"(at least {MIN_MINUTES} minutes played)\n"
-                        f"Right now: **{online}**{where}"),
-        "color": 0x2ECC71,
-    }
-    if rows:
-        embed["fields"] = [
-            {"name": "\U0001F194 Player", "value": block(players), "inline": True},
-            {"name": "\U0001F52A K \u26B0\ufe0f D \u2696\ufe0f K/D \U0001F3C6 W \u23F1\ufe0f Hrs",
-             "value": block(numbers), "inline": True},
-            {"name": "\u200b", "inline": False,
-             "value": f"{board.get('total', len(rows)):,} players ranked · [Full leaderboard]({page})\n"
-                      f"Updated <t:{int(time.time())}:R>"},
-        ]
-    else:
-        embed["description"] += "\n\nNo players on the board yet."
-    return embed
+    if status.get("map"):
+        online += f" · {status['map']}"
+    png = rlgimage.leaderboard(
+        f"{name} · Top {len(rows) or TOP}",
+        f"{RANGE_LABEL.get(RANGE, RANGE)} · Ranked by {SORT_LABEL.get(SORT, SORT)} · {MIN_MINUTES}+ minutes played",
+        rows, online=online,
+        footer_left=f"{board.get('total', len(rows)):,} players ranked",
+        footer_right="Updated " + rlgpost.stamp())
+    page = f"{ORIGIN}/s/{server_id}/leaderboard"
+    # <...> around the address stops Discord adding a link preview under the picture.
+    text = f"**{name}** · [Full leaderboard](<{page}>) · Updated <t:{int(time.time())}:R>"
+    return png, text, f"leaderboard-{server_id[:8]}.png"
 
 
-def read_message_id():
+def load_ids():
+    """{server id: Discord message id}. The single message from the older card
+    version is reused for the first server so it is replaced, not left behind."""
+    try:
+        with open(IDS_FILE, encoding="utf-8") as f:
+            return json.load(f)
+    except (FileNotFoundError, ValueError):
+        pass
     try:
         with open(STATE_FILE, encoding="utf-8") as f:
-            return f.read().strip() or None
+            old = f.read().strip()
+        return {SERVER_IDS[0]: old} if old and SERVER_IDS else {}
     except FileNotFoundError:
-        return None
-
-
-def save_message_id(message_id):
-    os.makedirs(os.path.dirname(STATE_FILE), exist_ok=True)
-    with open(STATE_FILE, "w", encoding="utf-8") as f:
-        f.write(str(message_id) + "\n")
+        return {}
 
 
 def main():
     if not SERVER_IDS:
         sys.exit("WARCON_SERVER_IDS is empty. Set it in the workflow file.")
-    payload = {
-        "embeds": [build_embed(sid) for sid in SERVER_IDS[:10]],
-        "allowed_mentions": {"parse": []},  # player names can never ping anyone
-    }
-    if DRY_RUN:
-        total = 0
-        for e in payload["embeds"]:
-            print(e["title"] + "\n" + e["description"])
-            total += len(e["title"]) + len(e["description"])
-            cols = [f["value"].strip("`\n").split("\n") for f in e.get("fields", [])[:2]]
-            if cols:
-                print(" | ".join(f["name"] for f in e["fields"][:2]))
-                for row in zip(*cols):
-                    print(" | ".join(row))
-                print(e["fields"][2]["value"])
-                print("widest column:", max(len(x) for c in cols for x in c), "characters")
-            total += sum(len(f["name"]) + len(f["value"]) for f in e.get("fields", []))
-        print("total characters:", total)
-        return
-    if not WEBHOOK:
+    if not WEBHOOK and not DRY_RUN:
         sys.exit("DISCORD_WEBHOOK_URL is not set. Add it as a repository secret.")
-
-    message_id = read_message_id()
-    if message_id:
-        try:
-            http("PATCH", f"{WEBHOOK}/messages/{message_id}", payload)
-            print("Edited the existing leaderboard message.")
-            return
-        except urllib.error.HTTPError as e:
-            if e.code != 404:
-                raise
-            print("The saved message is gone (deleted?). Posting a new one.")
-    created = http("POST", WEBHOOK + "?wait=true", payload)
-    save_message_id(created["id"])
-    print("Posted a new leaderboard message and saved its id.")
+    ids = load_ids()
+    for sid in SERVER_IDS[:10]:
+        png, text, filename = build(sid)
+        if DRY_RUN:
+            out = os.path.join(os.environ.get("DRY_RUN_DIR", "."), filename)
+            with open(out, "wb") as f:
+                f.write(png)
+            print(f"{text}\n  picture saved to {out} ({len(png) // 1024} KB)")
+            continue
+        ids[sid], new = rlgpost.put_image(WEBHOOK, ids.get(sid), png, filename, text)
+        print(("Posted a new" if new else "Updated the") + f" leaderboard picture for {sid[:8]}.")
+    if not DRY_RUN:
+        os.makedirs(os.path.dirname(IDS_FILE), exist_ok=True)
+        with open(IDS_FILE, "w", encoding="utf-8") as f:
+            json.dump(ids, f, indent=1, sort_keys=True)
 
 
 if __name__ == "__main__":

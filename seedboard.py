@@ -23,8 +23,8 @@ Settings (environment variables, set in the workflow file):
   BM_SERVER_IDS                  BattleMetrics server ids, separated by commas
   SEEDBOARD_START                first day to count, YYYY-MM-DD
   SEED_MIN / SEED_MAX            the seeding band (default 1 and 20)
-  SEEDBOARD_TOP                  rows per board, 1-25 (default 15)
-  DRY_RUN                        1 = print the boards instead of posting
+  SEEDBOARD_TOP                  players per board, 1-15 (default 10)
+  DRY_RUN                        1 = save the picture to disk instead of posting
 """
 import http.client
 import json
@@ -36,6 +36,9 @@ import urllib.parse
 import urllib.request
 from datetime import datetime, timedelta, timezone
 
+import rlgimage
+import rlgpost
+
 API = os.environ.get("BM_API", "https://api.battlemetrics.com").rstrip("/")
 TOKEN = os.environ.get("BATTLEMETRICS_TOKEN", "").strip()
 WEBHOOK = os.environ.get("DISCORD_SEEDBOARD_WEBHOOK_URL", "").strip()
@@ -43,7 +46,7 @@ SERVERS = [s.strip() for s in os.environ.get("BM_SERVER_IDS", "").split(",") if 
 START = datetime.strptime(os.environ.get("SEEDBOARD_START", "2026-09-01"), "%Y-%m-%d").replace(tzinfo=timezone.utc)
 LOW = int(os.environ.get("SEED_MIN", "1"))
 HIGH = int(os.environ.get("SEED_MAX", "20"))
-TOP = max(1, min(25, int(os.environ.get("SEEDBOARD_TOP", "15"))))
+TOP = max(1, min(15, int(os.environ.get("SEEDBOARD_TOP", "10"))))
 DRY_RUN = os.environ.get("DRY_RUN") == "1"
 REDO_DAYS = 3          # later runs recount today and the two days before it
 LONG = timedelta(hours=4)
@@ -221,48 +224,6 @@ def totals(days, since=None):
     return sorted(((pid, *v) for pid, v in t.items()), key=lambda r: (-r[1], r[0]))
 
 
-MEDALS = ["\U0001F947", "\U0001F948", "\U0001F949"]   # gold, silver, bronze
-
-
-def plain(name, width=20):
-    """Show a player name as plain text: no Discord formatting, no mentions."""
-    name = "".join(ch if ch.isprintable() else " " for ch in str(name)).strip() or "unknown"
-    if len(name) > width:
-        name = name[: width - 1] + "…"
-    for ch in "\\*_~`|>[]()#":
-        name = name.replace(ch, "\\" + ch)
-    return name.replace("@", "@\u200b")
-
-
-def board(rows, names, limit=2800):
-    """Numbered list. Each player gets a bold name line (with a medal for the top
-    three) and two indented detail lines: time and days, then the last day seeded."""
-    out, used = [], 0
-    for rank, (pid, secs, ndays, last) in enumerate(rows[:TOP], 1):
-        m = int(secs // 60)
-        medal = " " + MEDALS[rank - 1] if rank <= 3 else ""
-        # Noon UTC, so the date chip shows the same calendar day across the Americas.
-        when = int(datetime.strptime(last, "%Y-%m-%d").replace(hour=12, tzinfo=timezone.utc).timestamp())
-        # The backslash before the dot matters: Discord reads "1. " at the start of a
-        # line as a numbered list, which pushes the medal onto its own line.
-        entry = (f"**{rank}\\. {plain(names.get(pid, 'unknown'), 32)}**{medal}\n"
-                 f"> {m // 60}h {m % 60:02d}m seeding over {ndays} day{'' if ndays == 1 else 's'}\n"
-                 f"> Last seeded <t:{when}:D>")
-        if used + len(entry) + 1 > limit:
-            break
-        out.append(entry)
-        used += len(entry) + 1
-    return "\n".join(out) or "No seeding time recorded yet."
-
-
-def discord(method, url, body):
-    req = urllib.request.Request(url, data=json.dumps(body).encode(), method=method, headers={
-        "User-Agent": UA, "Content-Type": "application/json", "Accept": "application/json"})
-    with urllib.request.urlopen(req, timeout=30) as r:
-        raw = r.read()
-        return json.loads(raw) if raw else {}
-
-
 def main():
     if not SERVERS:
         sys.exit("BM_SERVER_IDS is empty. Set it in the workflow file.")
@@ -288,46 +249,35 @@ def main():
     shown = {pid: v[1] for pid, v in names.items()}
     since30 = (NOW.date() - timedelta(days=29)).isoformat()
     last30, alltime = totals(data["days"], since30), totals(data["days"])
-    rule = f"Time on an RLG server while it had {LOW} to {HIGH} players. Both servers count."
-    embeds = [
-        {"title": "Seederboard: Last 30 Days",
-         "description": f"{rule}\n\n{board(last30, shown)}",
-         "color": 0xF1C40F,
-         "footer": {"text": f"{len(last30):,} players helped seed in the last 30 days"}},
-        {"title": "Seederboard: All Time",
-         "description": board(alltime, shown),
-         "color": 0xF1C40F,
-         "footer": {"text": f"{len(alltime):,} players since {START.strftime('%B %d, %Y').replace(' 0', ' ')}"
-                            " · Source: BattleMetrics · Updated"},
-         "timestamp": datetime.now(timezone.utc).isoformat()},
-    ]
+    rows = lambda ranked: [{"name": shown.get(pid, "unknown"), "seconds": secs, "days": ndays}
+                           for pid, secs, ndays, _ in ranked[:TOP]]
+    png = rlgimage.seederboard(
+        f"Time on a server with {LOW} to {HIGH} players · Both servers",
+        [("Last 30 days", rows(last30)), ("All time", rows(alltime))],
+        right=f"{len(last30):,} seeders this month",
+        footer_left=f"Counted since {START.strftime('%B')} {START.day}, {START.year} · Source: BattleMetrics",
+        footer_right="Updated " + rlgpost.stamp())
+    text = (f"**Seederboard** · {len(alltime):,} players have helped seed · "
+            f"Updated <t:{int(time.time())}:R>")
     if DRY_RUN:
-        for e in embeds:
-            print(e["title"] + "\n" + e["description"] + "\n")
-            print(e["footer"]["text"], f"({len(e['description'])} characters)\n")
+        out = os.path.join(os.environ.get("DRY_RUN_DIR", "."), "seederboard.png")
+        with open(out, "wb") as f:
+            f.write(png)
+        print(f"{text}\n  picture saved to {out} ({len(png) // 1024} KB)")
         return
-    payload = {"embeds": embeds, "allowed_mentions": {"parse": []}}
     try:
         with open(ID_FILE, encoding="utf-8") as f:
             message_id = f.read().strip()
     except FileNotFoundError:
         message_id = ""
     try:
-        if message_id:
-            try:
-                discord("PATCH", f"{WEBHOOK}/messages/{message_id}", payload)
-                print("Edited the seederboard message.")
-                return
-            except urllib.error.HTTPError as e:
-                if e.code != 404:
-                    raise
-        created = discord("POST", WEBHOOK + "?wait=true", payload)
-        with open(ID_FILE, "w", encoding="utf-8") as f:
-            f.write(str(created["id"]) + "\n")
-        print("Posted a new seederboard message.")
+        message_id, new = rlgpost.put_image(WEBHOOK, message_id, png, "seederboard.png", text)
     except urllib.error.HTTPError as e:
-        # Never print the webhook URL: it is a secret.
-        sys.exit(f"Discord answered HTTP {e.code}: {e.read()[:300].decode(errors='replace')}")
+        sys.exit(rlgpost.describe(e))
+    if new:
+        with open(ID_FILE, "w", encoding="utf-8") as f:
+            f.write(str(message_id) + "\n")
+    print(("Posted a new" if new else "Updated the") + " seederboard picture.")
 
 
 if __name__ == "__main__":

@@ -1,8 +1,9 @@
-"""Keep one Discord message showing live Warcon server status, edited in place.
+"""Keep one Discord picture showing live Warcon server status, replaced in place.
 
-Reads the public status JSON for each server (no key needed) and posts it through
-a Discord webhook. The first run posts a new message and saves its id in state/;
-after that the same message is edited.
+Reads the public status JSON for each server (no key needed), draws it with
+rlgimage.py and posts it through a Discord webhook. The first run posts a new
+message and saves its id in state/; after that the picture is swapped whenever
+something on it changes. The text under it carries the live match clocks.
 
 Modes:
   python status.py --once   update the message one time and exit
@@ -15,7 +16,7 @@ Settings come from environment variables (set in .github/workflows/status.yml):
   WARCON_ORIGIN               default https://console.warcon.app
   STATUS_INTERVAL             seconds between checks, minimum 10 (default 20)
   STATUS_RUN_MINUTES          how long the loop runs before exiting (default 330)
-  DRY_RUN                     set to 1 to print the message instead of sending it
+  DRY_RUN                     set to 1 to save the picture to disk instead of sending it
 """
 import json
 import os
@@ -28,6 +29,8 @@ import urllib.request
 from datetime import datetime
 
 import recap
+import rlgimage
+import rlgpost
 import seed
 
 ORIGIN = os.environ.get("WARCON_ORIGIN", "https://console.warcon.app").rstrip("/")
@@ -57,27 +60,11 @@ def words(camel):
     return re.sub(r"(?<=[a-z0-9])(?=[A-Z])", " ", str(camel or "")).replace("_", " ").strip()
 
 
-def meter(value, top, width=10):
-    """A short progress bar made of solid and hollow blocks."""
-    filled = 0 if not top else round(width * min(value, top) / top)
-    if value and not filled:
-        filled = 1  # one player still shows one block
-    return "\u25B0" * filled + "\u25B1" * (width - filled)
-
-
 def unix(iso):
     try:
         return int(datetime.fromisoformat(str(iso).replace("Z", "+00:00")).timestamp())
     except ValueError:
         return None
-
-
-# State shown at the top of each card. Every state has its own icon and its own
-# words, so it never depends on telling the stripe colours apart.
-OFFLINE = ("\u26D4", "Offline", 0xE74C3C)
-EMPTY = ("\U0001F4A4", "Empty", 0x95A5A6)
-SEEDING = ("\U0001F331", "Seeding", 0xF1C40F)
-LIVE = ("\U0001F525", "Live", 0x2ECC71)
 
 
 def short_name(full):
@@ -112,78 +99,54 @@ def match_started(server_id):
     return unix(current.get("startedAt")) if current else None
 
 
-def build_column(server_id):
-    """One server as one column of the card. Returns (field, rank, status, seen):
-    rank orders the states (3 live, 2 seeding, 1 empty, 0 offline or unknown) and
-    seen is when Warcon last looked at the server."""
-    page = f"{ORIGIN}/s/{server_id}"
-    links = f"[Server page]({page}) · [Leaderboard]({page}/leaderboard)"
+_names = {}   # server id -> last known short name, used while a server cannot be read
+
+
+def build_server(server_id):
+    """One server's panel for the picture. Returns (panel, status, seen): status is
+    the raw Warcon status (None if unreadable), seen is when Warcon last looked."""
     try:
         s = http("GET", f"{ORIGIN}/api/public/servers/{server_id}").get("server", {})
-    except (urllib.error.URLError, TimeoutError, ValueError) as e:
-        code = getattr(e, "code", None)
-        why = f"HTTP {code}" if code else "no answer"
-        return ({"name": "\u26A0\ufe0f Status unavailable", "inline": True,
-                 "value": f"Warcon gave {why}. Will retry.\n{links}"}, 0, None, None)
-
-    name = short_name(s.get("name"))
-    players, cap = s.get("players") or 0, s.get("maxPlayers") or 0
+    except (urllib.error.URLError, TimeoutError, ValueError):
+        return {"name": _names.get(server_id, "Server"), "state": "OFFLINE"}, None, None
+    name = _names[server_id] = short_name(s.get("name"))
     if not s.get("ok"):
-        return ({"name": f"{OFFLINE[0]} {name} · Offline", "inline": True,
-                 "value": f"Offline or unreachable.\n{links}"}, 0, s, unix(s.get("observedAt")))
+        return {"name": name, "state": "OFFLINE"}, s, unix(s.get("observedAt"))
+    players, cap = s.get("players") or 0, s.get("maxPlayers") or 0
     if players < seed.LOW:
-        state, rank, note = EMPTY, 1, "Jump on and start the seed"
+        state, note = "EMPTY", "Jump on and start the seed"
     elif players <= seed.HIGH:
-        state, rank, note = SEEDING, 2, f"{seed.HIGH + 1 - players} more to go live"
+        state, note = "SEEDING", f"{seed.HIGH + 1 - players} more to go live"
     else:
-        state, rank, note = LIVE, 3, "Match in progress"
-
-    lines = [f"**{players}/{cap} players** · {note}", meter(players, cap, 12)]
-    if s.get("map"):
-        lines.append(f"\U0001F5FA\ufe0f **Map:** {words(s['map'])}")
-    if s.get("lighting"):
-        lines.append(f"\U0001F326\ufe0f **Weather:** {words(s['lighting'])}")
-    if s.get("experiences"):
-        lines.append("\U0001F3AE **Mode:** " + ", ".join(words(x) for x in s["experiences"]))
-    started = match_started(server_id)
-    if started:
-        # A Discord time chip: it reads "12 minutes ago" and keeps counting by itself.
-        lines.append(f"\u23F1\ufe0f **Match started:** <t:{started}:R>")
-    scores = s.get("scores") or []
-    if scores:
-        per_side = {}
-        for p in s.get("roster") or []:
-            if isinstance(p, dict) and p.get("faction"):
-                per_side[p["faction"]] = per_side.get(p["faction"], 0) + 1
-        lead = max(f.get("score", 0) for f in scores)
-        lines.append("")
-        for f in scores[:3]:
-            pts, on = f.get("score", 0), per_side.get(f.get("name"), 0)
-            crown = " \U0001F451" if lead and pts == lead else ""
-            lines.append(f"\u2694\ufe0f **{f.get('name', 'Faction')}:** {pts} pts · {on} on{crown}")
-    lines += ["", links]
-    field = {"name": f"{state[0]} {name} · {state[1]}", "value": "\n".join(lines)[:1024], "inline": True}
-    return field, rank, s, unix(s.get("observedAt"))
-
-
-def build_card(columns):
-    """All servers on one card, side by side. Returns (embed, fingerprint); the
-    fingerprint leaves out timestamps so it only changes when the content does."""
-    best = max((rank for _, rank, _, _ in columns), default=0)
-    color = {3: LIVE[2], 2: SEEDING[2], 1: EMPTY[2], 0: OFFLINE[2]}[best]
-    total = sum((s or {}).get("players") or 0 for _, _, s, _ in columns)
-    embed = {
-        "title": "RLG Live Server Status",
-        "description": f"**{total}** player{'' if total == 1 else 's'} online across {len(columns)} server"
-                       f"{'' if len(columns) == 1 else 's'}",
-        "color": color,
-        "fields": [f for f, _, _, _ in columns],
+        state, note = "LIVE", "Match in progress"
+    per_side = {}
+    for p in s.get("roster") or []:
+        if isinstance(p, dict) and p.get("faction"):
+            per_side[p["faction"]] = per_side.get(p["faction"], 0) + 1
+    panel = {
+        "name": name, "state": state, "note": note, "players": players, "max": cap,
+        "map": words(s.get("map")), "weather": words(s.get("lighting")),
+        "mode": ", ".join(words(x) for x in s.get("experiences") or []),
+        "scores": [(f.get("name", "Faction"), f.get("score", 0), per_side.get(f.get("name"), 0))
+                   for f in (s.get("scores") or [])[:3]],
     }
-    fingerprint = json.dumps(embed, sort_keys=True)
-    seen = [t for _, _, _, t in columns if t]
+    return panel, s, unix(s.get("observedAt"))
+
+
+def caption(built):
+    """The text under the picture: live match clocks, links and when it was checked.
+    Discord time chips keep counting by themselves between updates."""
+    lines = []
+    for sid, (panel, _, _) in zip(SERVER_IDS, built):
+        page = f"{ORIGIN}/s/{sid}"
+        started = match_started(sid) if panel.get("state") != "OFFLINE" else None
+        clock = f"match started <t:{started}:R> · " if started else ""
+        # <...> around an address stops Discord adding a link preview under the picture.
+        lines.append(f"**{panel['name']}** · {clock}[Server page](<{page}>) · [Leaderboard](<{page}/leaderboard>)")
+    seen = [t for _, _, t in built if t]
     if seen:
-        embed["fields"].append({"name": "\u200b", "inline": False, "value": f"Checked <t:{min(seen)}:R>"})
-    return embed, fingerprint
+        lines.append(f"Checked <t:{min(seen)}:R>")
+    return "\n".join(lines)
 
 
 def read_message_id():
@@ -200,26 +163,11 @@ def save_message_id(message_id):
         f.write(str(message_id) + "\n")
 
 
-def send(payload):
-    """Edit the saved message, or post a new one if there is none."""
-    message_id = read_message_id()
-    if message_id:
-        try:
-            http("PATCH", f"{WEBHOOK}/messages/{message_id}", payload)
-            return "edited"
-        except urllib.error.HTTPError as e:
-            if e.code != 404:
-                raise
-    created = http("POST", WEBHOOK + "?wait=true", payload)
-    save_message_id(created["id"])
-    return "posted new"
-
-
 def update(last_fingerprint, last_sent, alerts=False):
-    columns = [build_column(sid) for sid in SERVER_IDS[:10]]
+    built = [build_server(sid) for sid in SERVER_IDS[:10]]
     if alerts and not DRY_RUN:
-        for sid, (_, _, status, _) in zip(SERVER_IDS, columns):
-            # A problem in the alerts or recaps must never stop the status card.
+        for sid, (_, status, _) in zip(SERVER_IDS, built):
+            # A problem in the alerts or recaps must never stop the status picture.
             for label, job in (
                 ("Seeding alert", lambda: seed.check(sid, status, f"{ORIGIN}/s/{sid}", http)),
                 ("Match recap", lambda: recap.check(sid, get_matches(sid),
@@ -230,16 +178,33 @@ def update(last_fingerprint, last_sent, alerts=False):
                 except Exception as e:  # noqa: BLE001 - report it and keep going
                     detail = f"HTTP {e.code}" if isinstance(e, urllib.error.HTTPError) else f"{type(e).__name__}: {e}"
                     print(f"{label} problem on {sid[:8]} ({detail}); carrying on.", flush=True)
-    embed, fingerprint = build_card(columns)
-    if fingerprint == last_fingerprint and time.time() - last_sent < HEARTBEAT:
-        return last_fingerprint, last_sent  # nothing changed, skip the edit
-    payload = {"embeds": [embed], "allowed_mentions": {"parse": []}}
+
+    panels = [p for p, _, _ in built]
+    text = caption(built)
+    # The picture is only redrawn and uploaded when what it shows has changed.
+    fingerprint = json.dumps(panels, sort_keys=True)
+    changed = fingerprint != last_fingerprint
+    if not changed and time.time() - last_sent < HEARTBEAT:
+        return last_fingerprint, last_sent
+    total = sum(p.get("players", 0) for p in panels)
     if DRY_RUN:
-        print(embed["title"] + "\n" + embed["description"] + "\n")
-        for f in embed["fields"]:
-            print(f"[{'column' if f['inline'] else 'full row'}] {f['name']}\n{f['value']}\n")
-    else:
-        print(time.strftime("%H:%M:%S"), send(payload), flush=True)
+        png = rlgimage.status(panels, right=f"{total} player{'' if total == 1 else 's'} online",
+                              footer_left="Redline Gaming · Wardogs", footer_right="Updated " + rlgpost.stamp())
+        out = os.path.join(os.environ.get("DRY_RUN_DIR", "."), "status.png")
+        with open(out, "wb") as f:
+            f.write(png)
+        print(f"{text}\n  picture saved to {out} ({len(png) // 1024} KB)")
+        return fingerprint, time.time()
+
+    message_id = read_message_id()
+    if not changed and message_id and rlgpost.edit_text(WEBHOOK, message_id, text):
+        return fingerprint, time.time()   # nothing new to draw: just refresh "Checked"
+    png = rlgimage.status(panels, right=f"{total} player{'' if total == 1 else 's'} online",
+                          footer_left="Redline Gaming · Wardogs", footer_right="Updated " + rlgpost.stamp())
+    message_id, new = rlgpost.put_image(WEBHOOK, message_id, png, "status.png", text)
+    if new:
+        save_message_id(message_id)
+    print(time.strftime("%H:%M:%S"), "posted new" if new else "picture updated", flush=True)
     return fingerprint, time.time()
 
 

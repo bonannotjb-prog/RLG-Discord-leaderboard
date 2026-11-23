@@ -6,14 +6,13 @@ Nothing here runs unless DISCORD_RECAP_WEBHOOK_URL is set.
 How it works:
   - The first time it sees a server it only notes the newest finished match, so
     it never floods the channel with old matches.
-  - After that, every newly finished match gets one new message, unless fewer
+  - After that, every newly finished match gets one new picture, unless fewer
     than RECAP_MIN_PLAYERS people played in it (empty-server matches are skipped).
   - The id of the last match handled is kept in state/recaps.json.
 
 Settings (environment variables, set in .github/workflows/status.yml):
   DISCORD_RECAP_WEBHOOK_URL  webhook on the recaps channel, kept as a GitHub secret
   RECAP_MIN_PLAYERS          fewest players in a match for it to get a recap (default 10)
-  RECAP_TOP                  players listed in the recap, 1-10 (default 5)
 """
 import json
 import os
@@ -21,14 +20,14 @@ import re
 import urllib.error
 from datetime import datetime
 
+import rlgimage
+import rlgpost
 import seed
 
 WEBHOOK = os.environ.get("DISCORD_RECAP_WEBHOOK_URL", "").strip()
 MIN_PLAYERS = int(os.environ.get("RECAP_MIN_PLAYERS", "10"))
-TOP = max(1, min(10, int(os.environ.get("RECAP_TOP", "5"))))
 HERE = os.path.dirname(os.path.abspath(__file__))
 STATE_FILE = os.path.join(HERE, "state", "recaps.json")
-MEDALS = ["\U0001F947", "\U0001F948", "\U0001F949"]
 
 _state = None
 
@@ -61,19 +60,6 @@ def _words(text):
     return ", ".join(re.sub(r"(?<=[a-z0-9])(?=[A-Z])", " ", p).replace("_", " ").strip() for p in parts if p)
 
 
-def _plain(name, width=28):
-    name = "".join(ch if ch.isprintable() else " " for ch in str(name)).strip() or "unknown"
-    if len(name) > width:
-        name = name[: width - 1] + "…"
-    for ch in "\\*_~`|>[]()#":
-        name = name.replace(ch, "\\" + ch)
-    return name.replace("@", "@​")
-
-
-def _count(n, word):
-    return f"{n} {word}" + ("" if n == 1 else "s")
-
-
 def _length(start, end):
     try:
         a = datetime.fromisoformat(str(start).replace("Z", "+00:00"))
@@ -84,44 +70,28 @@ def _length(start, end):
     return f"{m // 60}h {m % 60:02d}m" if m >= 60 else f"{m}m"
 
 
-def _embed(m, detail, server_name, page):
-    """page is the server's public Warcon page, used for the title link."""
-    scores = sorted(m.get("finalScores") or [], key=lambda f: -f.get("score", 0))
-    winner = m.get("winner")
-    headline = f"\U0001F3C6 **{winner} wins**" if winner else "**Match ended with no winner**"
-    lines = [headline]
-    if scores:
-        lines.append(" · ".join(f"{f.get('name')} **{f.get('score', 0)}**" for f in scores))
-    facts = []
-    length = _length(m.get("startedAt"), m.get("endedAt"))
-    if length:
-        facts.append(f"⏱️ {length}")
-    facts.append(f"\U0001F465 {m.get('players', 0)} players (peak {m.get('peakPlayers', 0)} at once)")
-    lines.append(" · ".join(facts))
-    if m.get("experiences"):
-        lines.append(f"\U0001F3AE {_words(m['experiences'])}")
-    embed = {
-        "title": f"\U0001F3C1 Match recap: {server_name} · {_words(m.get('map')) or 'Unknown map'}"[:256],
-        "url": f"{page}/matches",
-        "description": "\n".join(lines),
-        "color": 0x3498DB,
-        "fields": [],
-        "timestamp": m.get("endedAt"),
-        "footer": {"text": "Match ended"},
-    }
+def build(m, detail, server_name, page):
+    """Returns (picture as PNG bytes, text shown under it, file name) for one match.
+    page is the server's public Warcon page."""
+    scores = sorted(((f.get("name"), f.get("score", 0)) for f in m.get("finalScores") or []),
+                    key=lambda f: -f[1])
+    facts = [x for x in (_length(m.get("startedAt"), m.get("endedAt")), f"{m.get('players', 0)} players") if x]
     rows = sorted((detail or {}).get("lines") or [], key=lambda r: (-r.get("kills", 0), r.get("deaths", 0)))
-    top = []
-    for i, r in enumerate(rows[:TOP], 1):
-        medal = MEDALS[i - 1] if i <= 3 else f"`{i:>2}`"
-        side = f" ({r['faction']})" if r.get("faction") else ""
-        top.append(f"{medal} **{_plain(r.get('name'))}**{side} · {_count(r.get('kills', 0), 'kill')}, {_count(r.get('deaths', 0), 'death')}")
-    if top:
-        embed["fields"].append({"name": "⭐ Top players", "value": "\n".join(top)[:1024], "inline": False})
-    awards = [f"**{a.get('label')}:** {_plain(a.get('name'))} ({a.get('value')})"
+    awards = [(a.get("label") or "", a.get("name") or "", str(a.get("value") or ""))
               for a in (detail or {}).get("awards") or [] if a.get("name")]
-    if awards:
-        embed["fields"].append({"name": "\U0001F396️ Awards", "value": "\n".join(awards)[:1024], "inline": False})
-    return embed
+    try:
+        ended = datetime.fromisoformat(str(m.get("endedAt")).replace("Z", "+00:00"))
+        when, chip = "Match ended " + rlgpost.stamp(ended), f" · Ended <t:{int(ended.timestamp())}:f>"
+    except ValueError:
+        when, chip = "", ""
+    png = rlgimage.recap(server_name, _words(m.get("map")) or "Unknown map", _words(m.get("experiences")),
+                         m.get("winner"), scores, facts, rows[:5], awards,
+                         footer_left=when, footer_right=f"Peak {m.get('peakPlayers', 0)} players at once")
+    winner = f"{m['winner']} wins" if m.get("winner") else "No winner"
+    # <...> around the address stops Discord adding a link preview under the picture.
+    text = (f"**{server_name}** · {_words(m.get('map')) or 'Unknown map'} · {winner}{chip} · "
+            f"[All matches](<{page}/matches>)")
+    return png, text, f"recap-{m.get('id')}.png"
 
 
 def check(server_id, matches, server_name, origin, http):
@@ -145,8 +115,8 @@ def check(server_id, matches, server_name, origin, http):
                 detail = http("GET", f"{origin}/api/public/servers/{server_id}/matches/{m['id']}")
             except (urllib.error.URLError, TimeoutError, ValueError):
                 detail = None   # still post the result, just without the player list
-            http("POST", WEBHOOK + "?wait=true",
-                 {"embeds": [_embed(m, detail, server_name, page)], "allowed_mentions": {"parse": []}})
+            png, text, filename = build(m, detail, server_name, page)
+            rlgpost.post_image(WEBHOOK, png, filename, text)
             print(f"Recap posted for match {m['id']} on {server_name}.", flush=True)
             # Remember what was posted live, so the one-time backfill never repeats it.
             posted = state.setdefault("_posted", {}).setdefault(server_id, [])

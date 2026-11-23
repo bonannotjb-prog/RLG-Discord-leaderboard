@@ -1,0 +1,79 @@
+name: Discord server status
+
+# How this stays close to live: GitHub cannot schedule anything faster than every
+# 5 minutes, so instead one job stays running for about 5.5 hours and updates the
+# Discord message every 20 seconds. The schedule below only exists to start the
+# next job. Because of the concurrency group, a new job waits in line while one
+# is running and takes over within about a minute of the old one finishing.
+
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch: {}   # adds a "Run workflow" button for manual runs
+
+permissions:
+  contents: write         # lets the job save the Discord message id back to the repo
+
+concurrency:
+  group: discord-server-status
+  cancel-in-progress: false
+
+env:
+  DISCORD_STATUS_WEBHOOK_URL: ${{ secrets.DISCORD_STATUS_WEBHOOK_URL }}
+  # One id per server, separated by commas. Each server gets its own panel in the
+  # same message, in this order: [Vanilla] #1, then [INF] #2.
+  WARCON_SERVER_IDS: "230a2cb3-e2af-450d-a1e1-515b08139d3d,2dd77c71-dbb6-49c4-95cf-78625467aba1"
+  STATUS_INTERVAL: "20"        # seconds between checks (minimum 10)
+  STATUS_RUN_MINUTES: "330"    # keep under the job's 6 hour limit
+
+  # Seeding alerts. These stay switched off until the DISCORD_SEED_WEBHOOK_URL
+  # secret exists.
+  DISCORD_SEED_WEBHOOK_URL: ${{ secrets.DISCORD_SEED_WEBHOOK_URL }}
+  SEED_ROLE_ID: "1574463353081045043"   # Discord role to ping (digits only)
+  SEED_MIN: "1"
+  SEED_MAX: "20"
+  SEED_START_PLAYERS: "3"      # players needed before the role is pinged
+  SEED_START_MINUTES: "3"      # how long they must stay before the ping
+  SEED_PUSH_AT: "15"           # player count for the "final push" ping; 0 turns it off
+  SEED_COOLDOWN_MINUTES: "90"  # shortest gap between pings for the same server
+  SEED_ALERT_ON_DROP: "0"      # 1 = also ping when a full server falls back to 20 or fewer
+
+  # Match recaps. These stay switched off until the DISCORD_RECAP_WEBHOOK_URL
+  # secret exists.
+  DISCORD_RECAP_WEBHOOK_URL: ${{ secrets.DISCORD_RECAP_WEBHOOK_URL }}
+  RECAP_MIN_PLAYERS: "10"      # matches with fewer players than this get no recap
+
+jobs:
+  status:
+    runs-on: ubuntu-latest
+    timeout-minutes: 345
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install the picture tools
+        run: pip install --quiet pillow fonttools
+
+      - name: Post or update the message once
+        run: python status.py --once
+
+      - name: Save state (message id and weekly heartbeat)
+        run: |
+          # Weekly heartbeat: this file changes once a week, so the repository always
+          # has a recent commit and GitHub never pauses the schedule for inactivity.
+          mkdir -p state
+          date -u +%G-W%V > state/heartbeat-status.txt
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if [ -n "$(git status --porcelain state)" ]; then
+            git add state
+            git commit -m "Save Discord status message id"
+            git pull --rebase
+            git push
+          fi
+
+      - name: Keep the message updated
+        run: python status.py

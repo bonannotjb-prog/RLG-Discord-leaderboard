@@ -1,0 +1,56 @@
+name: Discord recap backfill (one time)
+
+# Run by hand only. Posts a recap for every past match, oldest first.
+
+on:
+  workflow_dispatch:
+    inputs:
+      count_only:
+        description: "Only count how many recaps would be posted (posts nothing)"
+        type: boolean
+        default: false
+      force:
+        description: "Run again even though a backfill was already done (posts everything twice)"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write         # lets the job record that the backfill was done
+
+concurrency:
+  group: discord-recap-backfill
+  cancel-in-progress: false
+
+jobs:
+  backfill:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install the picture tools
+        run: pip install --quiet pillow fonttools
+
+      - name: Post past match recaps
+        env:
+          DISCORD_RECAP_WEBHOOK_URL: ${{ secrets.DISCORD_RECAP_WEBHOOK_URL }}
+          WARCON_SERVER_IDS: "230a2cb3-e2af-450d-a1e1-515b08139d3d,2dd77c71-dbb6-49c4-95cf-78625467aba1"
+          RECAP_MIN_PLAYERS: "10"
+          COUNT_ONLY: ${{ inputs.count_only && '1' || '0' }}
+          FORCE: ${{ inputs.force && '1' || '0' }}
+        run: python recap_backfill.py
+
+      - name: Record that the backfill was done
+        run: |
+          if [ -n "$(git status --porcelain state)" ]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add state
+            git commit -m "Record match recap backfill"
+            git pull --rebase
+            git push
+          fi

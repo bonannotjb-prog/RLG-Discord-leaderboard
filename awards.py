@@ -15,7 +15,7 @@ Settings (environment variables, set in the workflow file):
   WARCON_ORIGIN               default https://console.warcon.app
   AWARDS_MIN_MINUTES          minutes played in the week to be eligible (default 120)
   FORCE                       1 = post even if this week was already posted
-  DRY_RUN                     1 = print instead of posting
+  DRY_RUN                     1 = save the picture to disk instead of posting
 """
 import json
 import os
@@ -25,6 +25,9 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from datetime import datetime, timedelta, timezone
+
+import rlgimage
+import rlgpost
 
 ORIGIN = os.environ.get("WARCON_ORIGIN", "https://console.warcon.app").rstrip("/")
 SERVER_IDS = [s.strip() for s in os.environ.get("WARCON_SERVER_IDS", "").split(",") if s.strip()]
@@ -36,7 +39,6 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 LAST_FILE = os.path.join(HERE, "state", "awards_last.txt")
 SEED_FILE = os.path.join(HERE, "state", "seed_time.json")
 UA = "rlg-weekly-awards/1.0 (GitHub Actions; Discord webhook)"
-MEDALS = ["\U0001F947", "\U0001F948", "\U0001F949"]
 NOW = datetime.now(timezone.utc)
 
 
@@ -51,15 +53,6 @@ def http(method, url, body=None):
         return json.loads(raw) if raw else {}
 
 
-def plain(name, width=28):
-    name = "".join(ch if ch.isprintable() else " " for ch in str(name)).strip() or "unknown"
-    if len(name) > width:
-        name = name[: width - 1] + "…"
-    for ch in "\\*_~`|>[]()#":
-        name = name.replace(ch, "\\" + ch)
-    return name.replace("@", "@​")
-
-
 def board(sort):
     """Top rows of the org-wide 7 day leaderboard for one ranking."""
     q = urllib.parse.urlencode({"range": "7d", "scope": "org", "sort": sort, "minMinutes": MIN_MINUTES})
@@ -67,9 +60,8 @@ def board(sort):
 
 
 def podium(rows, describe):
-    """Three lines, one per medal. describe(row) gives the text after the name."""
-    out = [f"{MEDALS[i]} **{plain(r.get('name'))}** · {describe(r)}" for i, r in enumerate(rows[:3])]
-    return "\n".join(out) or "Nobody qualified this week."
+    """[(name, value text)] for the top three. describe(row) gives the value text."""
+    return [(r.get("name") or "unknown", describe(r)) for r in rows[:3]]
 
 
 def top_seeders():
@@ -109,45 +101,33 @@ def main():
         return
 
     kd = lambda r: r.get("kills", 0) / r["deaths"] if r.get("deaths") else float(r.get("kills", 0))
-    fields = [
-        {"name": "\U0001F52B Most Kills",
-         "value": podium(board("kills"), lambda r: f"{r.get('kills', 0):,} kills")},
-        {"name": "\U0001F3AF Best K/D",
-         "value": podium(board("kd"), lambda r: f"{kd(r):.2f} K/D ({r.get('kills', 0):,} kills, {r.get('deaths', 0):,} deaths)")},
-        {"name": "\U0001F3C6 Most Wins",
-         "value": podium(board("wins"), lambda r: f"{r.get('wins', 0)} wins in {r.get('matches', 0)} matches")},
-        {"name": "⏱️ Most Time Played",
-         "value": podium(board("playtime"), lambda r: f"{r.get('minutes', 0) / 60:.1f} hours")},
+    categories = [
+        ("Most kills", podium(board("kills"), lambda r: f"{r.get('kills', 0):,} kills")),
+        ("Best K/D", podium(board("kd"), lambda r: f"{kd(r):.2f}")),
+        ("Most wins", podium(board("wins"), lambda r: f"{r.get('wins', 0)} wins")),
+        ("Most time played", podium(board("playtime"), lambda r: f"{r.get('minutes', 0) / 60:.1f} hours")),
     ]
     seeders = top_seeders()
     if seeders:
-        fields.append({"name": "\U0001F331 Top Seeders", "value": "\n".join(
-            f"{MEDALS[i]} **{plain(n)}** · {int(s // 3600)}h {int(s % 3600 // 60):02d}m seeding"
-            for i, (n, s) in enumerate(seeders))})
-    for f in fields:
-        f["inline"] = False
+        categories.append(("Top seeders", [(n, f"{int(s // 3600)}h {int(s % 3600 // 60):02d}m") for n, s in seeders]))
 
     start, end = NOW - timedelta(days=7), NOW
     span = f"{start.strftime('%B')} {start.day} to {end.strftime('%B')} {end.day}"
-    embed = {
-        "title": "\U0001F3C5 RLG Weekly Awards",
-        "description": (f"**{span}**\nThe top players across both RLG servers over the last 7 days. "
-                        f"Kills, K/D, wins and time need at least {MIN_MINUTES} minutes played."),
-        "color": 0x9B59B6,
-        "fields": fields,
-        "footer": {"text": "Sources: Warcon and BattleMetrics · Posted"},
-        "timestamp": NOW.isoformat(),
-    }
+    png = rlgimage.awards(
+        f"{span} · Both servers", categories, right="Last 7 days",
+        footer_left=f"{MIN_MINUTES}+ minutes played to qualify · Sources: Warcon and BattleMetrics",
+        footer_right="Posted " + rlgpost.stamp(fmt="%b %-d, %Y"))
+    text = f"**RLG Weekly Awards** · {span}"
     if DRY_RUN:
-        print(embed["title"] + "\n" + embed["description"] + "\n")
-        for f in fields:
-            print(f["name"] + "\n" + f["value"] + "\n")
+        out = os.path.join(os.environ.get("DRY_RUN_DIR", "."), "awards.png")
+        with open(out, "wb") as f:
+            f.write(png)
+        print(f"{text}\n  picture saved to {out} ({len(png) // 1024} KB)")
         return
     try:
-        http("POST", WEBHOOK + "?wait=true", {"embeds": [embed], "allowed_mentions": {"parse": []}})
+        rlgpost.post_image(WEBHOOK, png, f"awards-{week}.png", text)
     except urllib.error.HTTPError as e:
-        # Never print the webhook URL: it is a secret.
-        sys.exit(f"Discord answered HTTP {e.code}: {e.read()[:300].decode(errors='replace')}")
+        sys.exit(rlgpost.describe(e))
     os.makedirs(os.path.dirname(LAST_FILE), exist_ok=True)
     with open(LAST_FILE, "w", encoding="utf-8") as f:
         f.write(week + "\n")
