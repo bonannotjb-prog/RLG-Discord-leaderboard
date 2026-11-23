@@ -1,0 +1,40 @@
+name: Discord recap for one match
+
+# Run by hand only. Posts the recap picture for a single match and changes
+# nothing else, so it is safe to use for a look at the layout or a re-post.
+
+on:
+  workflow_dispatch:
+    inputs:
+      server:
+        description: "Which server the match was on"
+        type: choice
+        options:
+          - "INF #2"
+          - "Vanilla #1"
+        default: "INF #2"
+      match_id:
+        description: "Match id from Warcon (leave empty for the newest finished match)"
+        type: string
+        default: ""
+
+jobs:
+  recap:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install the picture tools
+        run: pip install --quiet pillow fonttools
+
+      - name: Post the recap
+        env:
+          DISCORD_RECAP_WEBHOOK_URL: ${{ secrets.DISCORD_RECAP_WEBHOOK_URL }}
+          WARCON_SERVER_ID: ${{ inputs.server == 'INF #2' && '2dd77c71-dbb6-49c4-95cf-78625467aba1' || '230a2cb3-e2af-450d-a1e1-515b08139d3d' }}
+          MATCH_ID: ${{ inputs.match_id }}
+        run: python recap_one.py
