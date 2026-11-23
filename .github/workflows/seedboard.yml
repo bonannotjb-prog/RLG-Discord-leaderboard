@@ -34,7 +34,7 @@ jobs:
           SEEDBOARD_START: "2026-09-01"   # first day to count
           SEED_MIN: "1"
           SEED_MAX: "20"
-          SEEDBOARD_TOP: "15"
+          SEEDBOARD_TOP: "10"
         run: python seedboard.py
 
       - name: Save state (totals, message id and weekly heartbeat)
