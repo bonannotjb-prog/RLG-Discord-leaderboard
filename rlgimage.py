@@ -16,9 +16,19 @@ in assets/.
 """
 import io
 import os
+import subprocess
+import sys
 
-from fontTools.ttLib import TTFont
-from PIL import Image, ImageDraw, ImageEnhance, ImageFilter, ImageFont
+try:
+    from fontTools.ttLib import TTFont
+    from PIL import Image, ImageDraw, ImageEnhance, ImageFilter, ImageFont
+except ImportError:
+    # The workflow normally installs these first. If that step is missing (an
+    # older workflow file), install them here so the job still runs.
+    print("Picture tools not found; installing pillow and fonttools.", flush=True)
+    subprocess.check_call([sys.executable, "-m", "pip", "install", "--quiet", "pillow", "fonttools"])
+    from fontTools.ttLib import TTFont
+    from PIL import Image, ImageDraw, ImageEnhance, ImageFilter, ImageFont
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ASSETS = os.path.join(HERE, "assets")
