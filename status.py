@@ -1,9 +1,10 @@
-"""Keep one Discord picture showing live Warcon server status, replaced in place.
+"""Keep one Discord picture per server showing live Warcon status, replaced in place.
 
 Reads the public status JSON for each server (no key needed), draws it with
-rlgimage.py and posts it through a Discord webhook. The first run posts a new
-message and saves its id in state/; after that the picture is swapped whenever
-something on it changes. The text under it carries the live match clocks.
+rlgimage.py and posts it through a Discord webhook. Each server has its own
+message. The first run posts them and saves their ids in state/; after that a
+server's picture is swapped whenever something on it changes. The text under it
+carries the live match clock.
 
 Modes:
   python status.py --once   update the message one time and exit
@@ -40,7 +41,9 @@ INTERVAL = max(int(os.environ.get("STATUS_MIN_INTERVAL", "10")), int(os.environ.
 RUN_MINUTES = float(os.environ.get("STATUS_RUN_MINUTES", "330"))
 HEARTBEAT = 120  # edit at least this often even if nothing changed, so "checked" stays fresh
 DRY_RUN = os.environ.get("DRY_RUN") == "1"
-STATE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "state", "status_message_id.txt")
+HERE = os.path.dirname(os.path.abspath(__file__))
+STATE_FILE = os.path.join(HERE, "state", "status_message_id.txt")     # older single message
+IDS_FILE = os.path.join(HERE, "state", "status_messages.json")        # {server id: message id}
 UA = "rlg-status-bot/1.0 (GitHub Actions; Discord webhook)"
 
 
@@ -133,37 +136,47 @@ def build_server(server_id):
     return panel, s, unix(s.get("observedAt"))
 
 
-def caption(built):
-    """The text under the picture: live match clocks, links and when it was checked.
-    Discord time chips keep counting by themselves between updates."""
-    lines = []
-    for sid, (panel, _, _) in zip(SERVER_IDS, built):
-        page = f"{ORIGIN}/s/{sid}"
-        started = match_started(sid) if panel.get("state") != "OFFLINE" else None
-        clock = f"match started <t:{started}:R> · " if started else ""
-        # <...> around an address stops Discord adding a link preview under the picture.
-        lines.append(f"**{panel['name']}** · {clock}[Server page](<{page}>) · [Leaderboard](<{page}/leaderboard>)")
-    seen = [t for _, _, t in built if t]
-    if seen:
-        lines.append(f"Checked <t:{min(seen)}:R>")
-    return "\n".join(lines)
+def caption(sid, panel, seen):
+    """The text under one server's picture: live match clock, links and when it was
+    checked. Discord time chips keep counting by themselves between updates."""
+    page = f"{ORIGIN}/s/{sid}"
+    started = match_started(sid) if panel.get("state") != "OFFLINE" else None
+    clock = f"match started <t:{started}:R> · " if started else ""
+    # <...> around an address stops Discord adding a link preview under the picture.
+    line = f"**{panel['name']}** · {clock}[Server page](<{page}>) · [Leaderboard](<{page}/leaderboard>)"
+    return line + (f" · Checked <t:{seen}:R>" if seen else "")
 
 
-def read_message_id():
+def load_ids():
+    """{server id: Discord message id}. The single message from the older combined
+    picture is reused for the first server so it is replaced, not left behind."""
+    try:
+        with open(IDS_FILE, encoding="utf-8") as f:
+            return json.load(f)
+    except (FileNotFoundError, ValueError):
+        pass
     try:
         with open(STATE_FILE, encoding="utf-8") as f:
-            return f.read().strip() or None
+            old = f.read().strip()
+        return {SERVER_IDS[0]: old} if old and SERVER_IDS else {}
     except FileNotFoundError:
-        return None
+        return {}
 
 
-def save_message_id(message_id):
-    os.makedirs(os.path.dirname(STATE_FILE), exist_ok=True)
-    with open(STATE_FILE, "w", encoding="utf-8") as f:
-        f.write(str(message_id) + "\n")
+def save_ids(ids):
+    os.makedirs(os.path.dirname(IDS_FILE), exist_ok=True)
+    with open(IDS_FILE, "w", encoding="utf-8") as f:
+        json.dump(ids, f, indent=1, sort_keys=True)
 
 
-def update(last_fingerprint, last_sent, alerts=False):
+def draw(panel):
+    return rlgimage.status_one(panel, footer_left="Redline Gaming · Wardogs",
+                               footer_right="Updated " + rlgpost.stamp())
+
+
+def update(last, alerts=False):
+    """Check every server once. last holds, per server, (what its picture showed,
+    when its message was last touched); the updated copy is returned."""
     built = [build_server(sid) for sid in SERVER_IDS[:10]]
     if alerts and not DRY_RUN:
         for sid, (_, status, _) in zip(SERVER_IDS, built):
@@ -179,33 +192,35 @@ def update(last_fingerprint, last_sent, alerts=False):
                     detail = f"HTTP {e.code}" if isinstance(e, urllib.error.HTTPError) else f"{type(e).__name__}: {e}"
                     print(f"{label} problem on {sid[:8]} ({detail}); carrying on.", flush=True)
 
-    panels = [p for p, _, _ in built]
-    text = caption(built)
-    # The picture is only redrawn and uploaded when what it shows has changed.
-    fingerprint = json.dumps(panels, sort_keys=True)
-    changed = fingerprint != last_fingerprint
-    if not changed and time.time() - last_sent < HEARTBEAT:
-        return last_fingerprint, last_sent
-    total = sum(p.get("players", 0) for p in panels)
-    if DRY_RUN:
-        png = rlgimage.status(panels, right=f"{total} player{'' if total == 1 else 's'} online",
-                              footer_left="Redline Gaming · Wardogs", footer_right="Updated " + rlgpost.stamp())
-        out = os.path.join(os.environ.get("DRY_RUN_DIR", "."), "status.png")
-        with open(out, "wb") as f:
-            f.write(png)
-        print(f"{text}\n  picture saved to {out} ({len(png) // 1024} KB)")
-        return fingerprint, time.time()
-
-    message_id = read_message_id()
-    if not changed and message_id and rlgpost.edit_text(WEBHOOK, message_id, text):
-        return fingerprint, time.time()   # nothing new to draw: just refresh "Checked"
-    png = rlgimage.status(panels, right=f"{total} player{'' if total == 1 else 's'} online",
-                          footer_left="Redline Gaming · Wardogs", footer_right="Updated " + rlgpost.stamp())
-    message_id, new = rlgpost.put_image(WEBHOOK, message_id, png, "status.png", text)
-    if new:
-        save_message_id(message_id)
-    print(time.strftime("%H:%M:%S"), "posted new" if new else "picture updated", flush=True)
-    return fingerprint, time.time()
+    last = dict(last)
+    ids = None if DRY_RUN else load_ids()
+    for sid, (panel, _, seen) in zip(SERVER_IDS, built):
+        # A server's picture is only redrawn and uploaded when what it shows has changed.
+        fingerprint = json.dumps(panel, sort_keys=True)
+        old_fingerprint, sent = last.get(sid, (None, 0))
+        changed = fingerprint != old_fingerprint
+        if not changed and time.time() - sent < HEARTBEAT:
+            continue
+        text = caption(sid, panel, seen)
+        filename = f"status-{sid[:8]}.png"
+        if DRY_RUN:
+            png = draw(panel)
+            out = os.path.join(os.environ.get("DRY_RUN_DIR", "."), filename)
+            with open(out, "wb") as f:
+                f.write(png)
+            print(f"{text}\n  picture saved to {out} ({len(png) // 1024} KB)")
+            last[sid] = (fingerprint, time.time())
+            continue
+        message_id = ids.get(sid)
+        if not changed and message_id and rlgpost.edit_text(WEBHOOK, message_id, text):
+            last[sid] = (fingerprint, time.time())   # nothing new to draw: just refresh "Checked"
+            continue
+        ids[sid], new = rlgpost.put_image(WEBHOOK, message_id, draw(panel), filename, text)
+        if new:
+            save_ids(ids)
+        last[sid] = (fingerprint, time.time())
+        print(time.strftime("%H:%M:%S"), panel["name"], "posted new" if new else "picture updated", flush=True)
+    return last
 
 
 def main():
@@ -215,15 +230,15 @@ def main():
         sys.exit("DISCORD_STATUS_WEBHOOK_URL is not set. Add it as a repository secret.")
 
     if "--once" in sys.argv:
-        update(None, 0)
+        update({})
         return
 
     deadline = time.time() + RUN_MINUTES * 60
-    fingerprint, sent, failures = None, 0, 0
+    last, failures = {}, 0
     while time.time() < deadline:
         started = time.time()
         try:
-            fingerprint, sent = update(fingerprint, sent, alerts=True)
+            last = update(last, alerts=True)
             failures = 0
         except urllib.error.HTTPError as e:
             failures += 1

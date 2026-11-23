@@ -71,6 +71,18 @@ HEADER_H = 250
 COLS_H = 56
 ROW_H = 66
 FOOT_H = 64
+COMPACT = False
+
+
+def set_style(compact):
+    """compact=True draws a narrower picture with a slim header. Discord fits every
+    picture into the same box, so a narrower drawing shows about 20% larger text."""
+    global W, PAD, HEADER_H, COMPACT
+    COMPACT = bool(compact)
+    W, PAD, HEADER_H = (1380, 40, 108) if COMPACT else (1650, 54, 250)
+
+
+set_style(True)   # every post uses the slim header; set_style(False) brings back the tall banner
 
 # Each style is a list of fonts tried in order, so a name with unusual
 # characters still draws instead of showing empty boxes.
@@ -121,9 +133,14 @@ def width(text, style, size, spacing=0):
     return total + spacing * max(0, sum(len(p) for _, p in runs) - 1)
 
 
-def text(draw, x, y, value, style, size, fill, align="left", spacing=0, max_width=None):
-    """Draw value with its vertical middle at y. align is left, right or center."""
+def text(draw, x, y, value, style, size, fill, align="left", spacing=0, max_width=None, shrink_to=None):
+    """Draw value with its vertical middle at y. align is left, right or center.
+    A value wider than max_width is first drawn smaller (down to shrink_to), and
+    only cut off with an ellipsis if it still does not fit."""
     value = str(value)
+    if max_width and shrink_to:
+        while size > shrink_to and width(value, style, size, spacing) > max_width:
+            size -= 1
     if max_width and width(value, style, size, spacing) > max_width:
         while value and width(value + "…", style, size, spacing) > max_width:
             value = value[:-1]
@@ -155,7 +172,7 @@ def _header(canvas, title, subtitle, online, kicker="REDLINE GAMING"):
         region = banner.crop((int(bw * 0.56), 0, bw, bh))
         scale = max(W / region.width, HEADER_H / region.height)
         region = region.resize((round(region.width * scale), round(region.height * scale)), Image.LANCZOS)
-        top = int((region.height - HEADER_H) * 0.07)
+        top = int((region.height - HEADER_H) * (0.12 if COMPACT else 0.07))
         region = region.crop((0, top, W, top + HEADER_H))
         region = ImageEnhance.Brightness(region.filter(ImageFilter.GaussianBlur(0.8))).enhance(0.9)
         # Fade to near-black toward the left and the bottom.
@@ -173,22 +190,30 @@ def _header(canvas, title, subtitle, online, kicker="REDLINE GAMING"):
         print("banner.jpg is missing from the repository; drawing a plain header.", flush=True)
 
     draw = ImageDraw.Draw(canvas)
-    icon_size = 170
-    ix, iy = PAD, (HEADER_H - icon_size) // 2
+    icon_size = 78 if COMPACT else 170
+    ix, iy = PAD, (HEADER_H - 5 - icon_size) // 2 if COMPACT else (HEADER_H - icon_size) // 2
     icon_path = _find("icon.png")
     if icon_path:
         icon = Image.open(icon_path).convert("RGB").resize((icon_size, icon_size), Image.LANCZOS)
         canvas.paste(icon, (ix, iy))
         draw.rectangle([ix - 2, iy - 2, ix + icon_size + 1, iy + icon_size + 1], outline=(70, 70, 76), width=2)
-        tx = ix + icon_size + 36
+        tx = ix + icon_size + (22 if COMPACT else 36)
     else:
         print("icon.png is missing from the repository; leaving the icon out.", flush=True)
         tx = PAD
-    text(draw, tx, 62, kicker.upper(), "semi", 30, RED, spacing=7)
-    text(draw, tx, 124, title.upper(), "title", 98, WHITE, max_width=W - tx - PAD - 250)
-    text(draw, tx, 190, subtitle.upper(), "semi", 30, SOFT, spacing=3)
-    if online:
-        text(draw, W - PAD, 190, online.upper(), "semi", 30, WHITE, align="right", spacing=3)
+    if COMPACT:
+        # One slim strip: title on top, the rule under it, the live figure on the right.
+        rw = width(online.upper(), "semi", 26, 3) if online else 0
+        text(draw, tx, 36, title.upper(), "title", 62, WHITE, max_width=W - tx - PAD - 20)
+        text(draw, tx, 78, subtitle.upper(), "semi", 24, SOFT, spacing=2, max_width=W - tx - PAD - rw - 40)
+        if online:
+            text(draw, W - PAD, 78, online.upper(), "semi", 26, WHITE, align="right", spacing=3)
+    else:
+        text(draw, tx, 62, kicker.upper(), "semi", 30, RED, spacing=7)
+        text(draw, tx, 124, title.upper(), "title", 98, WHITE, max_width=W - tx - PAD - 250)
+        text(draw, tx, 190, subtitle.upper(), "semi", 30, SOFT, spacing=3)
+        if online:
+            text(draw, W - PAD, 190, online.upper(), "semi", 30, WHITE, align="right", spacing=3)
     draw.rectangle([0, HEADER_H - 5, W, HEADER_H], fill=RED)
 
 
@@ -237,9 +262,10 @@ def leaderboard(title, subtitle, rows, online="", footer_left="", footer_right="
     n = max(1, len(rows))
     canvas, draw = _canvas(HEADER_H + COLS_H + ROW_H * n + FOOT_H, title, subtitle, online)
     right = W - PAD
-    cols = [("HOURS", right), ("WINS", right - 190), ("K/D", right - 360), ("DEATHS", right - 550), ("KILLS", right - 760)]
-    name_x = PAD + 110
-    name_max = cols[-1][1] - 150 - name_x
+    step = [0, 160, 300, 455, 630] if COMPACT else [0, 190, 360, 550, 760]
+    cols = [(label, right - off) for label, off in zip(["HOURS", "WINS", "K/D", "DEATHS", "KILLS"], step)]
+    name_x = PAD + (96 if COMPACT else 110)
+    name_max = cols[-1][1] - 130 - name_x
 
     y = HEADER_H + COLS_H / 2 + 2
     text(draw, PAD + 34, y, "#", "semi", 28, DIM, align="center")
@@ -259,7 +285,7 @@ def leaderboard(title, subtitle, rows, online="", footer_left="", footer_right="
             draw.rectangle([PAD, y0, PAD + 6, y0 + ROW_H - 3], fill=MEDAL[rank - 1])
         _rank(draw, PAD + 34, mid, rank)
         text(draw, name_x, mid + 1, r.get("name") or "unknown", "bold" if podium else "semi", 38,
-             WHITE if podium else (222, 220, 216), max_width=name_max)
+             WHITE if podium else (222, 220, 216), max_width=name_max, shrink_to=29)
         kills, deaths = r.get("kills", 0), r.get("deaths", 0)
         kd = kills / deaths if deaths else float(kills)
         values = [f"{r.get('minutes', 0) / 60:,.1f}", f"{r.get('wins', 0):,}",
@@ -303,7 +329,8 @@ def seederboard(subtitle, boards, right="", footer_left="", footer_right=""):
             dw = text(draw, x1 - 18, mid + 1, f"{days} day{'' if days == 1 else 's'}", "text", 30, DIM, align="right")
             tw = text(draw, x1 - 18 - max(dw, 96) - 22, mid + 1, _clock(r.get("seconds", 0)), "bold", 38, WHITE, align="right")
             text(draw, x0 + 78, mid + 1, r.get("name") or "unknown", "bold" if podium else "semi", 36,
-                 WHITE if podium else (222, 220, 216), max_width=col_w - 78 - 18 - max(dw, 96) - 22 - tw - 24)
+                 WHITE if podium else (222, 220, 216), max_width=col_w - 78 - 18 - max(dw, 96) - 22 - tw - 24,
+                 shrink_to=27)
         if not rows:
             text(draw, x0 + col_w / 2, top + ROW_H / 2, "No seeding time recorded yet", "semi", 32, DIM, align="center")
     _footer(draw, top + ROW_H * n, footer_left, footer_right)
@@ -318,7 +345,7 @@ def recap(server, map_name, mode, winner, scores, facts, top, awards_list, foote
     canvas, draw = _canvas(HEADER_H + body_h + FOOT_H, f"Match recap · {server}",
                            " · ".join(x for x in (map_name, mode) if x), " · ".join(facts))
     top_y = HEADER_H + 26
-    left_w = 500
+    left_w = 420 if COMPACT else 500
     # Result panel on the left.
     draw.rectangle([PAD, top_y, PAD + left_w, top_y + COLS_H + 5 * ROW_H - 3], fill=ROW_A)
     draw.rectangle([PAD, top_y, PAD + 6, top_y + COLS_H + 5 * ROW_H - 3], fill=RED)
@@ -340,7 +367,7 @@ def recap(server, map_name, mode, winner, scores, facts, top, awards_list, foote
     x1 = W - PAD
     y = top_y + COLS_H / 2
     text(draw, x0 + 4, y, "TOP PLAYERS", "semi", 30, RED, spacing=4)
-    cols = [("K/D", x1 - 18), ("DEATHS", x1 - 150), ("KILLS", x1 - 320)]
+    cols = [("K/D", x1 - 18), ("DEATHS", x1 - (128 if COMPACT else 150)), ("KILLS", x1 - (262 if COMPACT else 320))]
     for label, x in cols:
         text(draw, x, y, label, "semi", 26, DIM, align="right", spacing=3)
     t0 = top_y + COLS_H
@@ -360,9 +387,10 @@ def recap(server, map_name, mode, winner, scores, facts, top, awards_list, foote
         for (label, x), v in zip(cols, [f"{kd:.2f}" if kd < 100 else f"{kd:.0f}", deaths, kills]):
             text(draw, x, mid + 1, v, "bold" if label == "KILLS" else "text", 38 if label == "KILLS" else 34,
                  WHITE if label == "KILLS" else SOFT, align="right")
-        fw = text(draw, cols[-1][1] - 110, mid + 1, r.get("faction") or "", "text", 26, DIM, align="right")
+        fx = cols[-1][1] - (92 if COMPACT else 110)
+        fw = text(draw, fx, mid + 1, r.get("faction") or "", "text", 24 if COMPACT else 26, DIM, align="right")
         text(draw, x0 + 78, mid + 1, r.get("name") or "unknown", "bold" if rank <= 3 else "semi", 36,
-             WHITE if rank <= 3 else (222, 220, 216), max_width=cols[-1][1] - 110 - fw - 22 - (x0 + 78))
+             WHITE if rank <= 3 else (222, 220, 216), max_width=fx - fw - 18 - (x0 + 78), shrink_to=27)
     # Awards strip.
     ay = t0 + 5 * ROW_H + 22
     tiles = awards_list[:3]
@@ -374,7 +402,7 @@ def recap(server, map_name, mode, winner, scores, facts, top, awards_list, foote
             draw.rectangle([tx, ay, tx + tw, ay + 124], fill=ROW_B)
             text(draw, tx + 24, ay + 32, label.upper(), "semi", 26, RED, spacing=3)
             vw = text(draw, tx + tw - 24, ay + 84, value, "bold", 40, WHITE, align="right")
-            text(draw, tx + 24, ay + 84, name, "semi", 38, (222, 220, 216), max_width=tw - 48 - vw - 20)
+            text(draw, tx + 24, ay + 84, name, "semi", 38, (222, 220, 216), max_width=tw - 48 - vw - 20, shrink_to=28)
     _footer(draw, HEADER_H + body_h, footer_left, footer_right)
     return _png(canvas)
 
@@ -407,7 +435,7 @@ def awards(subtitle, categories, right="", footer_left="", footer_right=""):
                 vw = text(draw, x + pw - 34, ry + 33, value, "bold" if j == 0 else "semi", 36,
                           WHITE if j == 0 else SOFT, align="right")
                 text(draw, x + 90, ry + 33, name, "bold" if j == 0 else "semi", 36,
-                     WHITE if j == 0 else (222, 220, 216), max_width=pw - 90 - 34 - vw - 22)
+                     WHITE if j == 0 else (222, 220, 216), max_width=pw - 90 - 34 - vw - 18, shrink_to=27)
             if not winners:
                 text(draw, x + pw / 2, y + 96 + 104, "Nobody qualified this week", "semi", 30, DIM, align="center")
         y += panel_h + gap
@@ -447,14 +475,14 @@ def status(servers, right="", footer_left="", footer_right=""):
             continue
         players, cap = s.get("players", 0), s.get("max", 0) or 100
         nw = text(draw, x + 30, y + 168, players, "title", 150, WHITE)
-        text(draw, x + 30 + nw + 14, y + 190, f"/ {cap} players", "semi", 38, SOFT)
+        cw = text(draw, x + 30 + nw + 14, y + 190, f"/ {cap} players", "semi", 38, SOFT)
         text(draw, x + pw - 30, y + 190, (s.get("note") or "").upper(), "semi", 30, WHITE if active else DIM,
-             align="right", spacing=2)
+             align="right", spacing=2, max_width=pw - 60 - nw - 14 - cw - 26, shrink_to=20)
         _bar(draw, x + 30, y + 238, pw - 60, 12, players / cap)
         fy = y + 300
         for label, value in (("MAP", s.get("map")), ("MODE", s.get("mode")), ("WEATHER", s.get("weather"))):
             text(draw, x + 30, fy, label, "semi", 26, DIM, spacing=3)
-            text(draw, x + 190, fy, value or "Unknown", "semi", 34, (222, 220, 216), max_width=pw - 220)
+            text(draw, x + 190, fy, value or "Unknown", "semi", 34, (222, 220, 216), max_width=pw - 220, shrink_to=24)
             fy += 48
         draw.line([(x + 30, fy - 8), (x + pw - 30, fy - 8)], fill=LINE, width=2)
         scores = (s.get("scores") or [])[:3]
@@ -469,4 +497,166 @@ def status(servers, right="", footer_left="", footer_right=""):
             _bar(draw, x + 230, sy - 5, pw - 230 - 230, 10, pts / best if lead else 0,
                  WHITE if first else (120, 120, 126))
     _footer(draw, y + panel_h + 20, footer_left, footer_right)
+    return _png(canvas)
+
+
+def status_one(s, footer_left="", footer_right=""):
+    """Live status of one server as its own picture, so everything on it is larger.
+    s: dict with name, state (LIVE, SEEDING, EMPTY or OFFLINE), note, players, max,
+    map, mode, weather, scores [(faction, points, players on)]."""
+    state = str(s.get("state") or "OFFLINE").upper()
+    active = state in ("LIVE", "SEEDING")
+    top_h, score_h = 330, 84
+    scores = (s.get("scores") or [])[:3]
+    body_h = 26 + top_h + (26 + score_h * len(scores) if scores and state != "OFFLINE" else 0) + 22
+    canvas, draw = _canvas(HEADER_H + body_h + FOOT_H, s.get("name") or "Server", "Live server status",
+                           (s.get("note") or "") if state != "OFFLINE" else "")
+    x0, x1, y = PAD, W - PAD, HEADER_H + 26
+    draw.rectangle([x0, y, x1, y + body_h - 48], fill=ROW_A)
+    draw.rectangle([x0, y, x1, y + 5], fill=RED if active else (70, 70, 76))
+    if state == "OFFLINE":
+        text(draw, W / 2, y + top_h / 2, "OFFLINE OR UNREACHABLE", "title", 80, SOFT, align="center")
+        _footer(draw, HEADER_H + body_h, footer_left, footer_right)
+        return _png(canvas)
+
+    # Left: the player count, as large as it can be, with the state written out beside it.
+    players, cap = s.get("players", 0), s.get("max", 0) or 100
+    nw = text(draw, x0 + 36, y + 138, players, "title", 250, WHITE)
+    text(draw, x0 + 36 + nw + 20, y + 176, f"/ {cap}", "semi", 56, SOFT)
+    text(draw, x0 + 36 + nw + 20, y + 108, "PLAYERS", "semi", 30, DIM, spacing=4)
+    tag_w = width(state, "bold", 40, 5) + 60
+    split = x0 + (x1 - x0) * 0.47
+    # The state tag sits in the top right corner, clear of the count even at 100 players.
+    tx = x1 - 36 - tag_w
+    if active:
+        draw.rectangle([tx, y + 36, tx + tag_w, y + 104], fill=WHITE)
+        text(draw, tx + tag_w / 2, y + 71, state, "bold", 40, (14, 14, 16), align="center", spacing=5)
+    else:
+        draw.rectangle([tx, y + 36, tx + tag_w, y + 104], outline=DIM, width=3)
+        text(draw, tx + tag_w / 2, y + 71, state, "bold", 40, SOFT, align="center", spacing=5)
+    _bar(draw, x0 + 36, y + 262, split - 40 - (x0 + 36), 18, players / cap)
+
+    # Right: map, mode and weather.
+    draw.line([(split, y + 40), (split, y + top_h - 30)], fill=LINE, width=2)
+    fy = y + 78
+    for label, value in (("MAP", s.get("map")), ("MODE", s.get("mode")), ("WEATHER", s.get("weather"))):
+        text(draw, split + 40, fy - 30, label, "semi", 24, DIM, spacing=4)
+        room = x1 - 36 - (split + 40) - (tag_w + 24 if label == "MAP" else 0)
+        text(draw, split + 40, fy + 8, value or "Unknown", "semi", 44, (232, 230, 226),
+             max_width=room, shrink_to=28)
+        fy += 96
+
+    # Faction scores across the full width.
+    sy = y + top_h
+    draw.line([(x0 + 36, sy), (x1 - 36, sy)], fill=LINE, width=2)
+    best = max([p for _, p, _ in scores] + [1])
+    lead = max([p for _, p, _ in scores] + [0])
+    for j, (faction, pts, on) in enumerate(scores):
+        cy = sy + 26 + j * score_h + score_h / 2 - 8
+        first = lead > 0 and pts == lead
+        text(draw, x0 + 36, cy, faction, "bold" if first else "semi", 46, WHITE if first else SOFT)
+        text(draw, x1 - 36, cy, f"{on} on", "text", 34, DIM, align="right")
+        text(draw, x1 - 180, cy, pts, "bold", 50, WHITE if first else SOFT, align="right")
+        _bar(draw, x0 + 300, cy - 8, (x1 - 300) - (x0 + 300), 16, pts / best if lead else 0,
+             WHITE if first else (120, 120, 126))
+    _footer(draw, HEADER_H + body_h, footer_left, footer_right)
+    return _png(canvas)
+
+
+def seederboard_one(heading, subtitle, rows, right="", footer_left="", footer_right=""):
+    """One seeding board as its own picture (for example just the last 30 days).
+    rows: dicts with name, seconds, days."""
+    n = max(1, len(rows))
+    canvas, draw = _canvas(HEADER_H + COLS_H + ROW_H * n + FOOT_H, f"Seederboard · {heading}", subtitle, right)
+    x0, x1 = PAD, W - PAD
+    days_x, time_x = x1 - 24, x1 - (250 if COMPACT else 300)
+    name_x = PAD + (96 if COMPACT else 110)
+    y = HEADER_H + COLS_H / 2 + 2
+    text(draw, PAD + 34, y, "#", "semi", 28, DIM, align="center")
+    text(draw, name_x, y, "PLAYER", "semi", 28, DIM, spacing=3)
+    text(draw, time_x, y, "SEEDING TIME", "semi", 28, DIM, align="right", spacing=3)
+    text(draw, days_x, y, "DAYS", "semi", 28, DIM, align="right", spacing=3)
+    top = HEADER_H + COLS_H
+    draw.line([(x0, top - 1), (x1, top - 1)], fill=LINE, width=2)
+    for i, r in enumerate(rows):
+        y0 = top + i * ROW_H
+        mid = y0 + ROW_H / 2
+        rank = i + 1
+        podium = rank <= 3
+        draw.rectangle([x0, y0, x1, y0 + ROW_H - 3], fill=ROW_A if i % 2 == 0 else ROW_B)
+        if podium:
+            draw.rectangle([x0, y0, x0 + 6, y0 + ROW_H - 3], fill=MEDAL[rank - 1])
+        _rank(draw, PAD + 34, mid, rank)
+        days = r.get("days", 0)
+        text(draw, days_x, mid + 1, f"{days} day{'' if days == 1 else 's'}", "text", 34, SOFT, align="right")
+        tw = text(draw, time_x, mid + 1, _clock(r.get("seconds", 0)), "bold", 40, WHITE, align="right")
+        text(draw, name_x, mid + 1, r.get("name") or "unknown", "bold" if podium else "semi", 38,
+             WHITE if podium else (222, 220, 216), max_width=time_x - tw - 40 - name_x, shrink_to=29)
+    if not rows:
+        text(draw, W / 2, top + ROW_H / 2, "No seeding time recorded yet", "semi", 32, DIM, align="center")
+    _footer(draw, top + ROW_H * n, footer_left, footer_right)
+    return _png(canvas)
+
+
+def awards_part(title, subtitle, categories, right="", footer_left="", footer_right=""):
+    """A few award categories in one row, drawn large. Used to split the weekly
+    awards across more than one picture. categories: (heading, [(name, value)])."""
+    cats = categories[:3] or [("", [])]
+    wide = len(cats) <= 2
+    row_h, name_size, head_size = (118, 50, 72) if wide else (112, 42, 60)
+    gap = 24
+    panel_h = 118 + 3 * (row_h + 10) + 14
+    canvas, draw = _canvas(HEADER_H + 26 + panel_h + 26 + FOOT_H, title, subtitle, right)
+    y = HEADER_H + 26
+    pw = (W - 2 * PAD - gap * (len(cats) - 1)) // len(cats)
+    for i, (heading, winners) in enumerate(cats):
+        x = PAD + i * (pw + gap)
+        draw.rectangle([x, y, x + pw, y + panel_h], fill=ROW_A)
+        draw.rectangle([x, y, x + pw, y + 5], fill=RED)
+        text(draw, x + 28, y + 66, heading.upper(), "title", head_size, WHITE, max_width=pw - 56, shrink_to=44)
+        for j in range(3):
+            ry = y + 118 + j * (row_h + 10)
+            draw.rectangle([x + 16, ry, x + pw - 16, ry + row_h], fill=ROW_B)
+            if j >= len(winners):
+                continue
+            name, value = winners[j]
+            if j == 0:
+                draw.rectangle([x + 16, ry, x + 22, ry + row_h], fill=MEDAL[0])
+            _rank(draw, x + 66, ry + row_h / 2, j + 1, r=30, size=42)
+            vw = text(draw, x + pw - 38, ry + row_h / 2 + 2, value, "bold" if j == 0 else "semi", name_size,
+                      WHITE if j == 0 else SOFT, align="right")
+            text(draw, x + 116, ry + row_h / 2 + 2, name, "bold" if j == 0 else "semi", name_size,
+                 WHITE if j == 0 else (222, 220, 216), max_width=pw - 116 - 38 - vw - 22, shrink_to=30)
+        if not winners:
+            text(draw, x + pw / 2, y + 118 + row_h * 1.5, "Nobody qualified this week", "semi", 32, DIM, align="center")
+    _footer(draw, y + panel_h + 26, footer_left, footer_right)
+    return _png(canvas)
+
+
+def awards_one(heading, subtitle, winners, right="", footer_left="", footer_right=""):
+    """One weekly award as its own picture: the top three for a single category.
+    winners: [(name, value)]. Names are never cut off; a very long one is drawn smaller."""
+    row_h, gap = 150, 12
+    rows = 3
+    canvas, draw = _canvas(HEADER_H + 28 + rows * (row_h + gap) - gap + 28 + FOOT_H,
+                           f"Weekly awards · {heading}", subtitle, right)
+    x0, x1 = PAD, W - PAD
+    y = HEADER_H + 28
+    for j in range(rows):
+        ry = y + j * (row_h + gap)
+        mid = ry + row_h / 2
+        first = j == 0
+        draw.rectangle([x0, ry, x1, ry + row_h], fill=ROW_A if first else ROW_B)
+        if j >= len(winners):
+            continue
+        name, value = winners[j]
+        draw.rectangle([x0, ry, x0 + 8, ry + row_h], fill=MEDAL[j])
+        _rank(draw, x0 + 92, mid, j + 1, r=42, size=58)
+        vw = text(draw, x1 - 44, mid + 2, value, "bold", 92 if first else 76,
+                  WHITE if first else SOFT, align="right")
+        text(draw, x0 + 176, mid + 2, name, "bold" if first else "semi", 72 if first else 62,
+             WHITE if first else (222, 220, 216), max_width=x1 - 44 - vw - 48 - (x0 + 176), shrink_to=30)
+    if not winners:
+        text(draw, W / 2, y + row_h * 1.5 + gap, "Nobody qualified this week", "semi", 40, DIM, align="center")
+    _footer(draw, y + rows * (row_h + gap) - gap + 28, footer_left, footer_right)
     return _png(canvas)

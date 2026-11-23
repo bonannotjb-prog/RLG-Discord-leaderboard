@@ -1,4 +1,5 @@
-"""Weekly awards: one Discord post a week naming the top players of the last 7 days.
+"""Weekly awards: once a week, one Discord picture per award naming the top players
+of the last 7 days.
 
 Runs on its own schedule (.github/workflows/awards.yml). Kills, K/D, wins and
 time played come from the Warcon leaderboard for the last 7 days, across every
@@ -102,10 +103,10 @@ def main():
 
     kd = lambda r: r.get("kills", 0) / r["deaths"] if r.get("deaths") else float(r.get("kills", 0))
     categories = [
-        ("Most kills", podium(board("kills"), lambda r: f"{r.get('kills', 0):,} kills")),
+        ("Most kills", podium(board("kills"), lambda r: f"{r.get('kills', 0):,}")),
         ("Best K/D", podium(board("kd"), lambda r: f"{kd(r):.2f}")),
-        ("Most wins", podium(board("wins"), lambda r: f"{r.get('wins', 0)} wins")),
-        ("Most time played", podium(board("playtime"), lambda r: f"{r.get('minutes', 0) / 60:.1f} hours")),
+        ("Most wins", podium(board("wins"), lambda r: f"{r.get('wins', 0)}")),
+        ("Most time played", podium(board("playtime"), lambda r: f"{r.get('minutes', 0) / 60:.1f}h")),
     ]
     seeders = top_seeders()
     if seeders:
@@ -113,25 +114,37 @@ def main():
 
     start, end = NOW - timedelta(days=7), NOW
     span = f"{start.strftime('%B')} {start.day} to {end.strftime('%B')} {end.day}"
-    png = rlgimage.awards(
-        f"{span} · Both servers", categories, right="Last 7 days",
-        footer_left=f"{MIN_MINUTES}+ minutes played to qualify · Sources: Warcon and BattleMetrics",
-        footer_right="Posted " + rlgpost.stamp(fmt="%b %-d, %Y"))
-    text = f"**RLG Weekly Awards** · {span}"
+    qualify = f"{MIN_MINUTES}+ minutes played to qualify · Source: Warcon"
+    posted = "Posted " + rlgpost.stamp(fmt="%b %-d, %Y")
+    posts = []   # one picture per award: (picture, text under it, file name)
+    for i, (heading, winners) in enumerate(categories):
+        seeding = heading == "Top seeders"
+        png = rlgimage.awards_one(
+            heading, f"{span} · Both servers", winners, right="Last 7 days",
+            footer_left="Time on a server with 1 to 20 players · Source: BattleMetrics" if seeding else qualify,
+            footer_right=posted)
+        text = f"**RLG Weekly Awards** · {span}\n**{heading}**" if i == 0 else f"**{heading}**"
+        posts.append((png, text, f"awards-{week}-{heading.lower().replace('/', '').replace(' ', '-')}.png"))
     if DRY_RUN:
-        out = os.path.join(os.environ.get("DRY_RUN_DIR", "."), "awards.png")
-        with open(out, "wb") as f:
-            f.write(png)
-        print(f"{text}\n  picture saved to {out} ({len(png) // 1024} KB)")
+        for png, text, filename in posts:
+            out = os.path.join(os.environ.get("DRY_RUN_DIR", "."), filename)
+            with open(out, "wb") as f:
+                f.write(png)
+            print(f"{text}\n  picture saved to {out} ({len(png) // 1024} KB)")
         return
-    try:
-        rlgpost.post_image(WEBHOOK, png, f"awards-{week}.png", text)
-    except urllib.error.HTTPError as e:
-        sys.exit(rlgpost.describe(e))
-    os.makedirs(os.path.dirname(LAST_FILE), exist_ok=True)
-    with open(LAST_FILE, "w", encoding="utf-8") as f:
-        f.write(week + "\n")
-    print(f"Posted the weekly awards for {week}.")
+    # The week is recorded as soon as the first picture is up, so a problem part
+    # way through can never lead to the whole set being posted twice.
+    for i, (png, text, filename) in enumerate(posts):
+        try:
+            rlgpost.post_image(WEBHOOK, png, filename, text)
+        except urllib.error.HTTPError as e:
+            sys.exit(rlgpost.describe(e) + f" ({i} of {len(posts)} award pictures were posted.)")
+        if i == 0:
+            os.makedirs(os.path.dirname(LAST_FILE), exist_ok=True)
+            with open(LAST_FILE, "w", encoding="utf-8") as f:
+                f.write(week + "\n")
+        time.sleep(1)
+    print(f"Posted {len(posts)} weekly award pictures for {week}.")
 
 
 if __name__ == "__main__":

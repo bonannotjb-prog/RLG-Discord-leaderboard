@@ -53,7 +53,8 @@ LONG = timedelta(hours=4)
 LONG_AS = timedelta(minutes=40)
 HERE = os.path.dirname(os.path.abspath(__file__))
 DATA_FILE = os.path.join(HERE, "state", "seed_time.json")
-ID_FILE = os.path.join(HERE, "state", "seedboard_message_id.txt")
+ID_FILE = os.path.join(HERE, "state", "seedboard_message_id.txt")      # older single message
+IDS_FILE = os.path.join(HERE, "state", "seedboard_messages.json")     # {board: message id}
 UA = "rlg-seederboard/1.0 (GitHub Actions)"
 WAIT_SCALE = float(os.environ.get("BM_WAIT_SCALE", "1"))   # only lowered in tests
 NOW = datetime.now(timezone.utc).replace(second=0, microsecond=0)
@@ -251,33 +252,53 @@ def main():
     last30, alltime = totals(data["days"], since30), totals(data["days"])
     rows = lambda ranked: [{"name": shown.get(pid, "unknown"), "seconds": secs, "days": ndays}
                            for pid, secs, ndays, _ in ranked[:TOP]]
-    png = rlgimage.seederboard(
-        f"Time on a server with {LOW} to {HIGH} players · Both servers",
-        [("Last 30 days", rows(last30)), ("All time", rows(alltime))],
-        right=f"{len(last30):,} seeders this month",
-        footer_left=f"Counted since {START.strftime('%B')} {START.day}, {START.year} · Source: BattleMetrics",
-        footer_right="Updated " + rlgpost.stamp())
-    text = (f"**Seederboard** · {len(alltime):,} players have helped seed · "
-            f"Updated <t:{int(time.time())}:R>")
+    subtitle = f"Time on a server with {LOW} to {HIGH} players · Both servers"
+    boards = [   # one picture per board: key, picture, text under it, file name
+        ("last30", rlgimage.seederboard_one(
+            "Last 30 days", subtitle, rows(last30), right=f"{len(last30):,} seeders",
+            footer_left="Source: BattleMetrics", footer_right="Updated " + rlgpost.stamp()),
+         f"**Seederboard · Last 30 days** · {len(last30):,} players helped seed · Updated <t:{int(time.time())}:R>",
+         "seederboard-30-days.png"),
+        ("alltime", rlgimage.seederboard_one(
+            "All time", subtitle, rows(alltime), right=f"{len(alltime):,} seeders",
+            footer_left=f"Counted since {START.strftime('%B')} {START.day}, {START.year} · Source: BattleMetrics",
+            footer_right="Updated " + rlgpost.stamp()),
+         f"**Seederboard · All time** · {len(alltime):,} players have helped seed · Updated <t:{int(time.time())}:R>",
+         "seederboard-all-time.png"),
+    ]
     if DRY_RUN:
-        out = os.path.join(os.environ.get("DRY_RUN_DIR", "."), "seederboard.png")
-        with open(out, "wb") as f:
-            f.write(png)
-        print(f"{text}\n  picture saved to {out} ({len(png) // 1024} KB)")
+        for _, png, text, filename in boards:
+            out = os.path.join(os.environ.get("DRY_RUN_DIR", "."), filename)
+            with open(out, "wb") as f:
+                f.write(png)
+            print(f"{text}\n  picture saved to {out} ({len(png) // 1024} KB)")
         return
+    ids = load_ids()
     try:
-        with open(ID_FILE, encoding="utf-8") as f:
-            message_id = f.read().strip()
-    except FileNotFoundError:
-        message_id = ""
-    try:
-        message_id, new = rlgpost.put_image(WEBHOOK, message_id, png, "seederboard.png", text)
+        for key, png, text, filename in boards:
+            ids[key], new = rlgpost.put_image(WEBHOOK, ids.get(key), png, filename, text)
+            print(("Posted a new" if new else "Updated the") + f" seederboard picture ({key}).")
     except urllib.error.HTTPError as e:
         sys.exit(rlgpost.describe(e))
-    if new:
-        with open(ID_FILE, "w", encoding="utf-8") as f:
-            f.write(str(message_id) + "\n")
-    print(("Posted a new" if new else "Updated the") + " seederboard picture.")
+    finally:
+        with open(IDS_FILE, "w", encoding="utf-8") as f:
+            json.dump(ids, f, indent=1, sort_keys=True)
+
+
+def load_ids():
+    """{board: Discord message id}. The single message from the older combined
+    picture is reused for the 30 day board so it is replaced, not left behind."""
+    try:
+        with open(IDS_FILE, encoding="utf-8") as f:
+            return json.load(f)
+    except (FileNotFoundError, ValueError):
+        pass
+    try:
+        with open(ID_FILE, encoding="utf-8") as f:
+            old = f.read().strip()
+        return {"last30": old} if old else {}
+    except FileNotFoundError:
+        return {}
 
 
 if __name__ == "__main__":
