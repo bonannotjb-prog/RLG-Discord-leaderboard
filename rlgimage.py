@@ -660,3 +660,54 @@ def awards_one(heading, subtitle, winners, right="", footer_left="", footer_righ
         text(draw, W / 2, y + row_h * 1.5 + gap, "Nobody qualified this week", "semi", 40, DIM, align="center")
     _footer(draw, y + rows * (row_h + gap) - gap + 28, footer_left, footer_right)
     return _png(canvas)
+
+
+def numbers_week(heading, subtitle, stats, right="", footer_left="", footer_right=""):
+    """Last week's headline numbers as one picture: one row per number.
+    stats: [(label, value, small note)]."""
+    row_h, gap = 112, 10
+    n = max(1, len(stats))
+    canvas, draw = _canvas(HEADER_H + 28 + n * (row_h + gap) - gap + 28 + FOOT_H,
+                           f"Weekly numbers · {heading}", subtitle, right)
+    x0, x1 = PAD, W - PAD
+    y = HEADER_H + 28
+    for j, (label, value, note) in enumerate(stats):
+        ry = y + j * (row_h + gap)
+        mid = ry + row_h / 2
+        draw.rectangle([x0, ry, x1, ry + row_h], fill=ROW_A if j % 2 == 0 else ROW_B)
+        draw.rectangle([x0, ry, x0 + 6, ry + row_h], fill=RED)
+        vw = text(draw, x1 - 40, mid + 2, value, "bold", 78, WHITE, align="right")
+        if note:
+            vw += 24 + text(draw, x1 - 40 - vw - 24, mid + 6, note, "text", 34, DIM, align="right")
+        text(draw, x0 + 44, mid + 2, label, "semi", 54, (222, 220, 216),
+             max_width=x1 - 40 - vw - 40 - (x0 + 44), shrink_to=34)
+    _footer(draw, y + n * (row_h + gap) - gap + 28, footer_left, footer_right)
+    return _png(canvas)
+
+
+def numbers_trend(heading, subtitle, rows, right="", footer_left="", footer_right=""):
+    """The last four weeks beside the four before, one row per measure.
+    rows: [(measure, value now, value before, change in words such as 'Up 12%')]."""
+    row_h = 84
+    n = max(1, len(rows))
+    canvas, draw = _canvas(HEADER_H + COLS_H + row_h * n + FOOT_H, f"Weekly numbers · {heading}", subtitle, right)
+    x0, x1 = PAD, W - PAD
+    change_x, before_x, now_x = x1 - 28, x1 - 300, x1 - 540
+    y = HEADER_H + COLS_H / 2 + 2
+    text(draw, x0 + 30, y, "MEASURE", "semi", 28, DIM, spacing=3)
+    text(draw, now_x, y, "LAST 4 WEEKS", "semi", 28, DIM, align="right", spacing=3)
+    text(draw, before_x, y, "4 BEFORE", "semi", 28, DIM, align="right", spacing=3)
+    text(draw, change_x, y, "CHANGE", "semi", 28, DIM, align="right", spacing=3)
+    top = HEADER_H + COLS_H
+    draw.line([(x0, top - 1), (x1, top - 1)], fill=LINE, width=2)
+    for i, (measure, now, before, change) in enumerate(rows):
+        y0 = top + i * row_h
+        mid = y0 + row_h / 2
+        draw.rectangle([x0, y0, x1, y0 + row_h - 3], fill=ROW_A if i % 2 == 0 else ROW_B)
+        text(draw, change_x, mid + 1, change, "semi", 36, (222, 220, 216), align="right")
+        text(draw, before_x, mid + 1, before, "text", 40, SOFT, align="right")
+        nw = text(draw, now_x, mid + 1, now, "bold", 50, WHITE, align="right")
+        text(draw, x0 + 30, mid + 1, measure, "semi", 42, (222, 220, 216),
+             max_width=now_x - nw - 36 - (x0 + 30), shrink_to=30)
+    _footer(draw, top + row_h * n, footer_left, footer_right)
+    return _png(canvas)
