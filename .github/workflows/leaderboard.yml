@@ -24,6 +24,9 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: Install the picture tools
+        run: pip install --quiet pillow fonttools
+
       - name: Update the leaderboard message
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
@@ -31,10 +34,10 @@ jobs:
           # in the same message, in this order. First is [RLG] Redline Gaming
           # [Vanilla] #1; second is the other RLG server.
           WARCON_SERVER_IDS: "230a2cb3-e2af-450d-a1e1-515b08139d3d,2dd77c71-dbb6-49c4-95cf-78625467aba1"
-          LB_RANGE: "all"      # current | 7d | 30d | 90d | all
+          LB_RANGE: "all"          # current | 7d | 30d | 90d | all
           LB_SORT: "kills"         # kills | kd | perHour | playtime | seeded | matches | wins | winRate | cash
           LB_MIN_MINUTES: "60"
-          LB_TOP: "100"
+          LB_TOP: "10"             # players per server, up to 15
         run: python leaderboard.py
 
       - name: Save state (message id and weekly heartbeat)

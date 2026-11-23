@@ -42,7 +42,6 @@ env:
   # secret exists.
   DISCORD_RECAP_WEBHOOK_URL: ${{ secrets.DISCORD_RECAP_WEBHOOK_URL }}
   RECAP_MIN_PLAYERS: "10"      # matches with fewer players than this get no recap
-  RECAP_TOP: "5"               # players listed in each recap
 
 jobs:
   status:
@@ -54,6 +53,9 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+
+      - name: Install the picture tools
+        run: pip install --quiet pillow fonttools
 
       - name: Post or update the message once
         run: python status.py --once

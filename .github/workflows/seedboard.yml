@@ -25,6 +25,9 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: Install the picture tools
+        run: pip install --quiet pillow fonttools
+
       - name: Count seeding time and update the board
         env:
           BATTLEMETRICS_TOKEN: ${{ secrets.BATTLEMETRICS_TOKEN }}
@@ -34,7 +37,7 @@ jobs:
           SEEDBOARD_START: "2026-09-01"   # first day to count
           SEED_MIN: "1"
           SEED_MAX: "20"
-          SEEDBOARD_TOP: "10"
+          SEEDBOARD_TOP: "10"             # players per board, up to 15
         run: python seedboard.py
 
       - name: Save state (totals, message id and weekly heartbeat)

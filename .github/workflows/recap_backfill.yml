@@ -32,6 +32,9 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: Install the picture tools
+        run: pip install --quiet pillow fonttools
+
       - name: Post past match recaps
         env:
           DISCORD_RECAP_WEBHOOK_URL: ${{ secrets.DISCORD_RECAP_WEBHOOK_URL }}
