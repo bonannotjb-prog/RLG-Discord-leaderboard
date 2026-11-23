@@ -56,9 +56,12 @@ def words(camel):
     return re.sub(r"(?<=[a-z0-9])(?=[A-Z])", " ", str(camel or "")).replace("_", " ").strip()
 
 
-def bar(value, top, width=20):
+def meter(value, top, width=10):
+    """A short progress bar made of solid and hollow blocks."""
     filled = 0 if not top else round(width * min(value, top) / top)
-    return "█" * filled + "░" * (width - filled)
+    if value and not filled:
+        filled = 1  # one player still shows one block
+    return "\u25B0" * filled + "\u25B1" * (width - filled)
 
 
 def unix(iso):
@@ -68,60 +71,78 @@ def unix(iso):
         return None
 
 
+# State shown at the top of each card. Every state has its own icon and its own
+# words, so it never depends on telling the stripe colours apart.
+OFFLINE = ("\u26D4", "Offline", 0xE74C3C)
+EMPTY = ("\U0001F4A4", "Empty", 0x95A5A6)
+SEEDING = ("\U0001F331", "Seeding", 0xF1C40F)
+LIVE = ("\U0001F525", "Live", 0x2ECC71)
+
+
 def build_embed(server_id):
     """Returns (embed, fingerprint, status). The fingerprint leaves out timestamps, so
     it only changes when something a player would care about changes. status is the
     raw Warcon status, or None if it could not be read."""
     page = f"{ORIGIN}/s/{server_id}"
+    links = f"[Server page]({page}) · [Leaderboard]({page}/leaderboard)"
     try:
         s = http("GET", f"{ORIGIN}/api/public/servers/{server_id}").get("server", {})
     except (urllib.error.URLError, TimeoutError, ValueError) as e:
         code = getattr(e, "code", None)
-        why = f"HTTP {code}" if code else "no answer"
-        body = f"**Status unavailable** (Warcon gave {why}). Will retry."
-        return {"title": "Server status", "url": page, "description": body}, body, None
+        body = f"\u26A0\ufe0f **Status unavailable** (Warcon gave {'HTTP ' + str(code) if code else 'no answer'}). Will retry."
+        return {"title": "Server status", "url": page, "description": body, "color": 0x95A5A6}, body, None
 
-    up = bool(s.get("ok"))
+    name = str(s.get("name") or "Server status").split(" - ")[0].strip()
     players, cap = s.get("players") or 0, s.get("maxPlayers") or 0
-    lines = [f"**{'ONLINE' if up else 'OFFLINE or unreachable'}**"]
-    if up:
-        lines.append(f"**Players:** {players}/{cap}")
-        lines.append(f"`{bar(players, cap)}`")
-        if s.get("map"):
-            lines.append(f"**Map:** {words(s['map'])}")
-        if s.get("experiences"):
-            lines.append("**Mode:** " + ", ".join(words(x) for x in s["experiences"]))
-        if s.get("lighting"):
-            lines.append(f"**Weather:** {words(s['lighting'])}")
+    if not s.get("ok"):
+        state = OFFLINE
+    elif players < seed.LOW:
+        state = EMPTY
+    elif players <= seed.HIGH:
+        state = SEEDING
+    else:
+        state = LIVE
+    icon, label, color = state
 
+    if state is OFFLINE:
+        headline = f"{icon} **Offline or unreachable**"
+    elif state is EMPTY:
+        headline = f"{icon} **Empty** · jump on and start the seed"
+    elif state is SEEDING:
+        headline = f"{icon} **Seeding** · {seed.HIGH + 1 - players} more to go live"
+    else:
+        headline = f"{icon} **Live**"
+    embed = {"title": name[:256], "url": page, "color": color, "description": headline, "fields": []}
+
+    if state is not OFFLINE:
+        embed["fields"] += [
+            {"name": "\U0001F465 Players", "value": f"**{players}/{cap}**\n{meter(players, cap)}", "inline": True},
+            {"name": "\U0001F5FA\ufe0f Map", "value": words(s.get("map")) or "Unknown", "inline": True},
+            {"name": "\U0001F326\ufe0f Weather", "value": words(s.get("lighting")) or "Unknown", "inline": True},
+        ]
+        if s.get("experiences"):
+            embed["fields"].append({"name": "\U0001F3AE Mode", "inline": False,
+                                    "value": ", ".join(words(x) for x in s["experiences"])})
         scores = s.get("scores") or []
-        roster = s.get("roster") or []
         per_side = {}
-        for p in roster:
+        for p in s.get("roster") or []:
             if isinstance(p, dict) and p.get("faction"):
                 per_side[p["faction"]] = per_side.get(p["faction"], 0) + 1
-        if scores:
-            top = max([s.get("scoreCap") or 0] + [f.get("score", 0) for f in scores]) or 1
-            name_w = max(len(str(f.get("name", ""))) for f in scores)
-            table = []
-            for f in scores:
-                row = f"{str(f.get('name', '')):<{name_w}}  {f.get('score', 0):>4}  {bar(f.get('score', 0), top, 12)}"
-                if per_side:
-                    row += f"  {per_side.get(f.get('name'), 0):>3} playing"
-                table.append(row)
-            lines.append("**Score:**\n```\n" + "\n".join(table) + "\n```")
+        # Faction scores only mean something while a match is being played.
+        if players and scores:
+            lead = max(f.get("score", 0) for f in scores)
+            for f in scores[:3]:
+                pts, on = f.get("score", 0), per_side.get(f.get("name"), 0)
+                crown = " \U0001F451" if lead and pts == lead else ""
+                embed["fields"].append({
+                    "name": f"{f.get('name', 'Faction')}{crown}", "inline": True,
+                    "value": f"**{pts}** pts\n{on} player{'' if on == 1 else 's'}"})
 
-    fingerprint = "\n".join(lines)
+    fingerprint = json.dumps(embed, sort_keys=True)
     seen = unix(s.get("observedAt"))
-    lines.append(f"[Server page]({page}) · [Leaderboard]({page}/leaderboard)")
-    if seen:
-        lines.append(f"Checked <t:{seen}:R>")
-    embed = {
-        "title": (s.get("name") or "Server status")[:256],
-        "url": page,
-        "description": "\n".join(lines)[:4096],
-    }
-    return embed, embed["title"] + "\n" + fingerprint, s
+    embed["fields"].append({"name": "\u200b", "inline": False,
+                            "value": links + (f"\nChecked <t:{seen}:R>" if seen else "")})
+    return embed, fingerprint, s
 
 
 def read_message_id():
@@ -164,7 +185,10 @@ def update(last_fingerprint, last_sent, alerts=False):
     payload = {"embeds": [e for e, _, _ in built], "allowed_mentions": {"parse": []}}
     if DRY_RUN:
         for e in payload["embeds"]:
-            print(e["title"] + "\n" + e["description"] + "\n")
+            print(e["title"] + "\n" + e["description"])
+            for f in e.get("fields", []):
+                print(f"  [{'inline' if f['inline'] else 'full row'}] {f['name']}: " + f["value"].replace("\n", " / "))
+            print()
     else:
         print(time.strftime("%H:%M:%S"), send(payload), flush=True)
     return fingerprint, time.time()
