@@ -70,6 +70,13 @@ def http(method, url, body=None):
     sys.exit(f"Gave up on {urllib.parse.urlparse(url).netloc} after 8 tries.")
 
 
+def short_name(full):
+    """'[RLG] Redline Gaming [Vanilla] #1 - discord.gg/...' -> 'Vanilla #1'"""
+    name = str(full or "Server").split(" - ")[0].strip()
+    found = re.search(r"\[(?!RLG\])([^\]]+)\]\s*(#\d+)?", name)
+    return (found.group(1) + (" " + found.group(2) if found.group(2) else "")).strip() if found else name
+
+
 def all_matches(server_id):
     out, page = [], 1
     while True:
@@ -95,9 +102,7 @@ def main():
     todo, new_marks = [], {}
     for sid in SERVER_IDS:
         status = http("GET", f"{ORIGIN}/api/public/servers/{sid}").get("server", {})
-        name = str(status.get("name") or "Server").split(" - ")[0].strip()
-        found = re.search(r"\[(?!RLG\])([^\]]+)\]\s*(#\d+)?", name)
-        short = (found.group(1) + (" " + found.group(2) if found.group(2) else "")).strip() if found else name
+        short = short_name(status.get("name"))
         ended = [m for m in all_matches(sid) if m.get("endedAt") and m.get("id") is not None]
         if not ended:
             continue
