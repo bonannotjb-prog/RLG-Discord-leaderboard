@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Redline Gaming: getting live and growing</title>
+<meta name="description" content="How the Redline Gaming Wardogs servers are doing week by week: seeding, players and what moves the numbers.">
+<style>
+:root{--color-bg:#ffffff;--color-fg:#1c1c1c;--color-fg-muted:#5b6168;--color-panel:#f5f6f7;--color-border-line:#d7dade;--cds-gap-xl:28px;--cds-gap-lg:20px;--cds-gap-md:12px;--cds-gap-sm:8px;--cds-gap-xs:4px;--cds-pad-lg:16px;--cds-pad-sm:8px;--cds-radius:8px;--cds-font-size-title:28px;--cds-font-size-heading:19px;--cds-font-size-body:16px;--cds-font-size-caption:13px;--cds-font-weight-medium:600;--font-anthropic-sans:system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif;--font-anthropic-serif:Georgia,"Times New Roman",serif;--cds-text-secondary:#5b6168;--cds-surface-popover:#ffffff;--cds-border:#c6cad0;--cds-shadow-popover:0 2px 8px rgba(0,0,0,.18);--cds-chart-muted:#b6bdc6;--cds-chart-axis:#989ea6;--cds-chart-grid:#e4e6ea}
+@media (prefers-color-scheme: dark){:root{--color-bg:#16181b;--color-fg:#eceef0;--color-fg-muted:#a4abb3;--color-panel:#1f2226;--color-border-line:#363b42;--cds-text-secondary:#a4abb3;--cds-surface-popover:#262a2f;--cds-border:#454b53;--cds-chart-muted:#59616b;--cds-chart-axis:#6f7781;--cds-chart-grid:#2c3036}}
+body{margin:0;background:var(--color-bg)}
+.pg{max-width:1100px;margin:0 auto;padding:20px;line-height:1.45}
+.pg{display:flex;flex-direction:column;gap:var(--cds-gap-xl);color:var(--color-fg);font-family:var(--font-anthropic-sans);font-size:var(--cds-font-size-body)}
+.pg h1{font-family:var(--font-anthropic-serif);font-weight:400;font-size:var(--cds-font-size-title);margin:0 0 var(--cds-gap-sm)}
+.pg h2{font-size:var(--cds-font-size-heading);font-weight:var(--cds-font-weight-medium);margin:0}
+.pg h3{font-size:var(--cds-font-size-body);font-weight:var(--cds-font-weight-medium);margin:0 0 var(--cds-gap-sm)}
+.pg h4{font-size:var(--cds-font-size-caption);font-weight:var(--cds-font-weight-medium);margin:var(--cds-gap-md) 0 var(--cds-gap-xs)}
+.pg p{margin:0 0 var(--cds-gap-sm)}
+.pg section{display:flex;flex-direction:column;gap:var(--cds-gap-md)}
+.pg section>p,.pg section>h4{margin-bottom:0}
+.pg .pg-ans{font-family:var(--font-anthropic-serif);font-size:var(--cds-font-size-heading)}
+.pg .pg-note{color:var(--color-fg-muted);font-size:var(--cds-font-size-caption)}
+.pg .pg-two{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:var(--cds-gap-lg)}
+.pg .pg-col{background:var(--color-panel);border:1px solid var(--color-border-line);border-radius:var(--cds-radius);padding:var(--cds-pad-lg);min-width:0}
+.pg .pg-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:var(--cds-gap-md)}
+.pg .pg-card .pg-k{color:var(--color-fg-muted);font-size:var(--cds-font-size-caption);display:block}
+.pg .pg-card .pg-n{font-family:var(--font-anthropic-serif);font-weight:400;font-size:var(--cds-font-size-title);font-variant-numeric:tabular-nums;display:block}
+.pg .pg-card .pg-s{color:var(--color-fg-muted);font-size:var(--cds-font-size-caption)}
+.pg .pg-chart{position:relative;min-height:100px;color:var(--color-fg-muted)}
+.pg .pg-chart svg{display:block;overflow:visible}
+.pg .pg-chart .tick text,.pg .pg-lab{fill:var(--cds-text-secondary);font-size:var(--cds-font-size-caption);font-family:var(--font-anthropic-sans)}
+.pg .pg-tip{position:absolute;pointer-events:none;color:var(--color-fg);background:var(--cds-surface-popover);border:1px solid var(--cds-border);box-shadow:var(--cds-shadow-popover);border-radius:var(--cds-radius);padding:var(--cds-pad-sm);font-size:var(--cds-font-size-caption);white-space:nowrap;z-index:2}
+.pg .pg-tip div+div{color:var(--cds-text-secondary)}
+.pg .pg-scroll{overflow-x:auto}
+.pg .pg-tall{max-height:380px;overflow-y:auto}
+.pg .pg-tall th{position:sticky;top:0;background:var(--color-panel)}
+.pg table{border-collapse:collapse;width:100%;font-size:var(--cds-font-size-caption);font-variant-numeric:tabular-nums}
+.pg th,.pg td{text-align:right;padding:4px 6px;border-bottom:1px solid var(--color-border-line);white-space:nowrap}
+.pg th:first-child,.pg td:first-child{text-align:left}
+.pg th{color:var(--color-fg-muted);font-weight:var(--cds-font-weight-medium)}
+.pg ul{margin:0;padding-left:1.2em}
+.pg li{margin-bottom:var(--cds-gap-sm)}
+.pg details{border-top:1px solid var(--color-border-line);padding-top:var(--cds-gap-sm)}
+.pg details>summary{cursor:pointer;color:var(--color-fg-muted);font-size:var(--cds-font-size-caption);text-decoration:underline}
+.pg details>*+*{margin-top:var(--cds-gap-md)}
+.pg .pg-tabs{display:flex;flex-wrap:wrap;gap:0;border:1px solid var(--color-border-line);border-radius:var(--cds-radius);overflow:hidden;width:fit-content;margin-bottom:var(--cds-gap-sm)}
+.pg .pg-tab{font:inherit;color:var(--color-fg-muted);background:var(--color-bg);border:0;padding:var(--cds-pad-sm) var(--cds-pad-lg);cursor:pointer}
+.pg .pg-tab+.pg-tab{border-left:1px solid var(--color-border-line)}
+.pg .pg-tab[aria-pressed='true']{color:var(--color-bg);background:var(--color-fg);font-weight:var(--cds-font-weight-medium);text-decoration:underline}
+.pg .pg-pane{display:flex;flex-direction:column;gap:var(--cds-gap-xl)}
+.pg .pg-pane[hidden]{display:none}
+.pg a{color:inherit;text-decoration:underline}
+</style>
+</head>
+<body>
+<div class='pg'>
+<header id='top'>
+<h1>Redline Gaming: getting live and growing</h1>
+<div class='pg-tabs' role='group' aria-label='Page'><button type='button' class='pg-tab' value='overview' aria-pressed='true'>Overview</button><button type='button' class='pg-tab' value='history' aria-pressed='false'>History</button><button type='button' class='pg-tab' value='deep' aria-pressed='false'>Seeding</button><button type='button' class='pg-tab' value='moves' aria-pressed='false'>What moves the numbers</button></div>
+<p class='pg-note'>Both Redline servers, <span data-draw='v' data-source='summary' data-field='data_from' data-row='0' data-fmt='date'>—</span> to <span data-draw='v' data-source='summary' data-field='data_through' data-row='0' data-fmt='date'>—</span>. Live means 20 or more players on. Times are US Eastern. Each section gives the answer first; open See the numbers for the detail.</p>
+<p class='pg-note'>The numbers and charts update themselves every Monday. The written conclusions were last reviewed on November 22, 2026, so check them against the History page as time passes.</p>
+</header>
+
+<div class='pg-pane' data-tab='overview'>
+<section id='short'>
+<h2>The answer</h2>
+<div class='pg-col'><ul>
+<li><b>Who gets us live:</b> the admin team does <b data-draw='v' data-source='deep_summary' data-field='admin_share_pct' data-row='0' data-fmt='pct'>—</b> of all seeding.</li>
+<li><b>How long it takes:</b> typically <b data-draw='v' data-source='summary' data-field='typical_minutes_to_20' data-row='0' data-fmt='min'>—</b> to reach 20, and <b data-draw='v' data-source='summary' data-field='reached_20_pct' data-row='0' data-fmt='pct'>—</b> of attempts get there.</li>
+<li><b>What brings players in:</b> a server that is already live.</li>
+<li><b>What drives players away:</b> an empty server, and the clock after 11pm.</li>
+<li><b>What moves the numbers most:</b> the size of the game, and whether we were live the day before.</li>
+</ul></div>
+</section>
+
+<section id='who'>
+<h2>1. Who gets the servers live</h2>
+<p class='pg-ans'>A small group, and half of it is the admin team.</p>
+<div class='pg-col' id='who-cards'><div class='pg-cards'>
+<div class='pg-card'><span class='pg-k'>Seeding time done by the admin team</span><span class='pg-n' data-draw='v' data-source='deep_summary' data-field='admin_share_pct' data-row='0' data-fmt='pct'>—</span></div>
+<div class='pg-card'><span class='pg-k'>Players who seeded 10 times or more</span><span class='pg-n' data-draw='v' data-source='deep_summary' data-field='ten_plus_players' data-row='0' data-fmt='int'>—</span><span class='pg-s'>they did <span data-draw='v' data-source='deep_summary' data-field='ten_plus_share_pct' data-row='0' data-fmt='pct'>—</span> of all seeding</span></div>
+<div class='pg-card'><span class='pg-k'>Attempts that reached 20 with an admin on early</span><span class='pg-n' data-draw='v' data-source='deep_summary' data-field='adm_early_pct' data-row='0' data-fmt='pct'>—</span><span class='pg-s'>against <span data-draw='v' data-source='deep_summary' data-field='no_adm_early_pct' data-row='0' data-fmt='pct'>—</span> with none</span></div>
+</div></div>
+<details><summary>See the numbers: the 25 players who helped most</summary>
+<div class='pg-col' id='who-table'><div class='pg-scroll pg-tall'><table id='seeders-table' data-source='seeders' data-row-key='key'><thead><tr><th data-field='player'>Player</th><th data-field='seeds_helped'>Seeds that reached 20</th><th data-field='attempts_fell_short'>Attempts that fell short</th><th data-field='hours_seeding'>Hours spent seeding</th><th data-field='seeds_helped_last_30_days'>Seeds in the last 30 days</th></tr></thead><tbody data-draw='rows'></tbody></table></div><p class='pg-note'>A seeder is a player who spent at least 10 minutes on a server before it reached 20.</p></div>
+</details>
+</section>
+
+<section id='howlong'>
+<h2>2. How long it takes</h2>
+<p class='pg-ans'>About an hour and a half to reach 20. After that it fills fast.</p>
+<div class='pg-col' id='howlong-cards'><div class='pg-cards'>
+<div class='pg-card'><span class='pg-k'>Typical time to reach 20</span><span class='pg-n' data-draw='v' data-source='summary' data-field='typical_minutes_to_20' data-row='0' data-fmt='min'>—</span></div>
+<div class='pg-card'><span class='pg-k'>Then from 20 to full</span><span class='pg-n' data-draw='v' data-source='summary' data-field='minutes_20_to_full' data-row='0' data-fmt='min'>—</span></div>
+<div class='pg-card'><span class='pg-k'>Typical time it stays live</span><span class='pg-n' data-draw='v' data-source='summary' data-field='typical_hours_live' data-row='0' data-fmt='hrs'>—</span></div>
+</div></div>
+<details id='howlong-more'><summary>See the numbers: by start time and by server</summary>
+<div class='pg-col' id='howlong-chart'><h3>Share of attempts that reached 20, by when the first player joined</h3><div class='pg-chart' data-draw='bars' data-source='start_times' data-x='started' data-y='reached_20_pct' data-unit='percent of attempts reached 20' data-n='attempts' data-n-unit='attempts' data-label='Share of seed attempts that reached 20 players, by the time of day the attempt started'></div></div>
+<div class='pg-col'><div class='pg-scroll'><table id='start-table' data-source='start_times' data-row-key='started'><thead><tr><th data-field='started'>First player joined</th><th data-field='attempts'>Attempts</th><th data-field='reached_20'>Reached 20</th><th data-field='reached_20_pct' data-fmt='pct'>Share</th><th data-field='typical_minutes'>Typical minutes to 20</th></tr></thead><tbody data-draw='rows'></tbody></table></div></div>
+<div class='pg-col'><div class='pg-scroll'><table id='server-table' data-source='by_server' data-row-key='server'><thead><tr><th data-field='server'>Server</th><th data-field='attempts'>Attempts</th><th data-field='reached_20_pct' data-fmt='pct'>Reached 20</th><th data-field='typical_minutes'>Typical minutes to 20</th><th data-field='minutes_20_to_full'>Minutes from 20 to full</th><th data-field='typical_hours_live'>Typical hours live</th><th data-field='days_live'>Days live</th></tr></thead><tbody data-draw='rows'></tbody></table></div></div>
+</details>
+</section>
+
+<section id='in'>
+<h2>3. What brings players in</h2>
+<p class='pg-ans'>A server that is already live.</p>
+<div class='pg-col' id='in-arrivals'><h3>New players arriving per hour, by how many were already on</h3><div class='pg-chart' data-draw='hbars' data-source='arrivals' data-x='players_on' data-y='new_players_per_hour' data-unit='new players an hour' data-label='New players arriving per hour, by how many players were already on the server'></div><p class='pg-note'>A full server takes fewer new players because they can only get in as others leave.</p></div>
+<details id='in-modes'><summary>See the numbers: game modes</summary>
+<p>In North America the average Limited server was live <b data-draw='v' data-source='summary' data-field='limited_na_hours' data-row='0' data-fmt='hrs'>—</b> in a week, Infantry Only <b data-draw='v' data-source='summary' data-field='infantry_na_hours' data-row='0' data-fmt='hrs'>—</b> and Vanilla <b data-draw='v' data-source='summary' data-field='vanilla_na_hours' data-row='0' data-fmt='hrs'>—</b>. Worldwide the three are close.</p>
+<div class='pg-two'>
+<div class='pg-col' id='in-modes-na'><h3>Live hours per server, North America</h3><div class='pg-chart' data-draw='hbars' data-source='modes_na' data-x='mode' data-y='live_hours_per_server' data-unit='hours live per server in the week' data-label='Live hours per community server by game mode, North America'></div></div>
+<div class='pg-col' id='in-modes-world'><h3>Live hours per server, worldwide</h3><div class='pg-chart' data-draw='hbars' data-source='modes_world' data-x='mode' data-y='live_hours_per_server' data-unit='hours live per server in the week' data-label='Live hours per community server by game mode, worldwide'></div></div>
+</div>
+<p class='pg-note'>Community servers that had players in the week of November 13 to 19, 2026. Limited was brand new then. This comparison is a one-off and does not update itself.</p>
+</details>
+<details id='in-seasons'><summary>See the numbers: seasons, patches and Steam</summary>
+<div class='pg-col' id='in-weeks'><h3>Different players on Redline each week</h3><div class='pg-chart' data-draw='bars' data-source='weeks' data-x='week' data-y='players' data-unit='players' data-events='1' data-label='Different players seen on either Redline server each week, with seasons and patches marked'></div><div class='pg-scroll'><table id='events-table' data-source='events' data-row-key='n'><thead><tr><th data-field='event'>Numbered circle on the chart</th><th data-field='n'>Mark</th><th data-field='when'>Date</th></tr></thead><tbody data-draw='rows'></tbody></table></div><p class='pg-note'>A paler bar is a part week.</p></div>
+<div class='pg-col' id='in-patches'><h3>What a new season did to player numbers</h3><div class='pg-scroll'><table id='patches-table' data-source='patches' data-row-key='n'><thead><tr><th data-field='event'>Season</th><th data-field='when'>Began</th><th data-field='game_before' data-fmt='int'>Players in the game, week before</th><th data-field='game_after' data-fmt='int'>First week</th><th data-field='game_second_week' data-fmt='int'>Second week</th><th data-field='redline_before' data-fmt='int'>Redline players a day, week before</th><th data-field='redline_after' data-fmt='int'>First week</th><th data-field='redline_second_week' data-fmt='int'>Second week</th></tr></thead><tbody data-draw='rows'></tbody></table></div><p class='pg-note'>Players in the game is the daily high on Steam, averaged over the week. Seasons 2 and 3 each lifted the game by about half for one week, and by the second week it was back where it started. Redline did not gain from Season 2: its players fell while the game grew. GTA 6 came out on PlayStation and Xbox on November 19, 2026, a week after Season 3 began, so those figures cannot separate the two. A season only helps if the servers are live in its first week.</p></div>
+<div class='pg-col' id='in-steam'><div class='pg-cards'>
+<div class='pg-card'><span class='pg-k'>In the game on Steam, daily high</span><span class='pg-n' data-draw='v' data-source='steam' data-field='steam_peak' data-row='0' data-fmt='int'>—</span><span class='pg-s'><span data-draw='v' data-source='steam' data-field='day' data-row='0' data-fmt='date'>—</span></span></div>
+<div class='pg-card'><span class='pg-k'>On a server, daily high</span><span class='pg-n' data-draw='v' data-source='steam' data-field='servers_peak' data-row='0' data-fmt='int'>—</span><span class='pg-s'>counted by BattleMetrics</span></div>
+<div class='pg-card'><span class='pg-k'>In the game but not on a server</span><span class='pg-n' data-draw='v' data-source='steam' data-field='off_server_pct' data-row='0' data-fmt='pct'>—</span><span class='pg-s'>menus and queues, game-wide</span></div>
+</div><p class='pg-note'>A rough figure: the two highs need not fall in the same hour. It covers the whole game, not Redline.</p></div>
+</details>
+</section>
+
+<section id='out'>
+<h2>4. What drives players away</h2>
+<p class='pg-ans'>An empty server and a late hour. Not maps, scores or team balance.</p>
+<div class='pg-col' id='out-cards'><div class='pg-cards'>
+<div class='pg-card'><span class='pg-k'>Left within 5 minutes of joining a nearly empty server</span><span class='pg-n' data-draw='v' data-source='summary' data-field='left_within_5_empty_pct' data-row='0' data-fmt='pct'>—</span><span class='pg-s'>against <span data-draw='v' data-source='summary' data-field='left_within_5_live_pct' data-row='0' data-fmt='pct'>—</span> on a live server</span></div>
+<div class='pg-card'><span class='pg-k'>Nights that ended after 11pm</span><span class='pg-n' data-draw='v' data-source='summary' data-field='nights_ended_late_pct' data-row='0' data-fmt='pct'>—</span></div>
+<div class='pg-card'><span class='pg-k'>Match changes after 11pm that lost a third of the players</span><span class='pg-n' data-draw='v' data-source='summary' data-field='lost_third_after_11pm_pct' data-row='0' data-fmt='pct'>—</span><span class='pg-s'>against <span data-draw='v' data-source='summary' data-field='lost_third_before_11pm_pct' data-row='0' data-fmt='pct'>—</span> before 11pm</span></div>
+</div></div>
+<details id='out-more'><summary>See the numbers: by hour, and what did not matter</summary>
+<div class='pg-col' id='out-chart'><h3>How often the night was over within an hour, by when a match ended</h3><div class='pg-chart' data-draw='bars' data-source='leaving_hours' data-x='match_ended' data-y='night_over_within_hour_pct' data-unit='percent of match changes, server not live an hour later' data-n='match_changes' data-n-unit='match changes' data-label='Share of match changes after which the server was no longer live an hour later, by the hour the match ended'></div></div>
+<div class='pg-two'>
+<div class='pg-col' id='out-other'><h3>Share of match changes that lost a third of the players, before 11pm</h3><div class='pg-scroll'><table id='other-table' data-source='leaving_other' data-row-key='factor'><thead><tr><th data-field='factor'>We compared</th><th data-field='lowest_pct' data-fmt='pct'>Lowest</th><th data-field='highest_pct' data-fmt='pct'>Highest</th><th data-field='match_changes'>Match changes</th></tr></thead><tbody data-draw='rows'></tbody></table></div></div>
+<div class='pg-col' id='out-first'><h3>Did a bad first match put new players off</h3><div class='pg-scroll'><table id='first-table' data-source='first_match' data-row-key='first_match'><thead><tr><th data-field='first_match'>Their first match</th><th data-field='new_players' data-fmt='int'>New players</th><th data-field='came_back_pct' data-fmt='pct'>Came back within a week</th></tr></thead><tbody data-draw='rows'></tbody></table></div><p class='pg-note'>Only a little.</p></div>
+</div>
+<div class='pg-col'><h3>How long a visit lasts by how full the server was</h3><div class='pg-scroll'><table id='stays-table' data-source='stays' data-row-key='players_on'><thead><tr><th data-field='players_on'>Players on when they joined</th><th data-field='visits' data-fmt='int'>Visits</th><th data-field='typical_stay_min'>Typical stay, minutes</th><th data-field='left_within_5_min_pct' data-fmt='pct'>Left within 5 minutes</th></tr></thead><tbody data-draw='rows'></tbody></table></div></div>
+</details>
+</section>
+
+<section id='do'>
+<h2>What to do</h2>
+<div class='pg-col'><ul>
+<li><b>Get to 20 every day.</b> A live day brings the players and makes the next day easier.</li>
+<li><b>Start earlier.</b> Hours gained before 11pm are hours the server keeps.</li>
+<li><b>Put every seeder on one server first.</b> Let the second fill from it.</li>
+<li><b>Leave map rotation and team balance alone.</b> Neither moves the numbers.</li>
+</ul></div>
+</section>
+</div>
+
+<div class='pg-pane' data-tab='history' hidden>
+<section id='hist-now'>
+<h2>How are we doing now</h2>
+<p class='pg-ans'>The last four full weeks beside the four before them.</p>
+<div class='pg-col' id='hist-now-box'><div class='pg-scroll'><table id='hist-now-table' data-source='history_now' data-row-key='key'><thead><tr><th data-field='measure'>Measure</th><th data-field='last_4_weeks'>Last 4 weeks</th><th data-field='the_4_before'>The 4 before</th><th data-field='change'>Change</th><th data-field='direction'>Direction</th></tr></thead><tbody data-draw='rows'></tbody></table></div><p class='pg-note'>The last four weeks run from the week of <span data-draw='v' data-source='status' data-field='last4_from' data-row='0'>—</span> to the week of <span data-draw='v' data-source='status' data-field='last4_to' data-row='0'>—</span>. Each figure is the average of its four weeks. For typical minutes to reach 20, down is better; for the rest, up is better.</p></div>
+</section>
+<section id='hist-weeks'>
+<h2>Week by week</h2>
+<p class='pg-note'><span data-draw='v' data-source='status' data-field='weeks' data-row='0'>—</span> full weeks so far, Monday to Sunday, from the week of <span data-draw='v' data-source='status' data-field='first_week' data-row='0'>—</span>. A new week is added every Monday and earlier weeks are kept. Numbered circles are seasons and patches, listed on the Overview page.</p>
+<div class='pg-two'>
+<div class='pg-col' id='hist-days'><h3>Days with a live server, out of 7</h3><div class='pg-chart' data-draw='bars' data-source='history' data-x='week' data-y='days_live' data-unit='days live that week' data-events='1' data-label='Days each week with a live Redline server, out of 7'></div></div>
+<div class='pg-col' id='hist-mins'><h3>Typical minutes to reach 20</h3><div class='pg-chart' data-draw='bars' data-source='history' data-x='week' data-y='typical_minutes_to_20' data-unit='minutes, typical' data-n='reached_20' data-n-unit='seeds reached 20' data-label='Typical minutes for a seed attempt to reach 20 players, each week'></div><p class='pg-note'>No bar means no attempt reached 20 that week.</p></div>
+<div class='pg-col' id='hist-players'><h3>Players a day</h3><div class='pg-chart' data-draw='bars' data-source='history' data-x='week' data-y='players_per_day' data-unit='players a day' data-events='1' data-label='Different players a day on either Redline server, averaged over each week'></div></div>
+<div class='pg-col' id='hist-share'><h3>Redline players for every 10,000 in the game</h3><div class='pg-chart' data-draw='bars' data-source='history' data-x='week' data-y='per_10000' data-unit='Redline players per 10,000 in the game' data-label='Redline players a day for every 10,000 players in the game on Steam, each week'></div><p class='pg-note'>This shows whether Redline is gaining or losing ground once the size of the game is taken out.</p></div>
+<div class='pg-col' id='hist-ok'><h3>Share of seed attempts that reached 20</h3><div class='pg-chart' data-draw='bars' data-source='history' data-x='week' data-y='reached_20_pct' data-unit='percent of attempts reached 20' data-n='attempts' data-n-unit='attempts' data-label='Share of seed attempts that reached 20 players, each week'></div></div>
+<div class='pg-col' id='hist-admins'><h3>Admins who seeded</h3><div class='pg-chart' data-draw='bars' data-source='history' data-x='week' data-y='admins_seeded' data-unit='admins seeded that week' data-label='Number of admins who spent 10 minutes or more seeding, each week'></div></div>
+</div>
+<details><summary>See the numbers: every week</summary>
+<div class='pg-col'><div class='pg-scroll pg-tall'><table id='history-table' data-source='history' data-row-key='week'><thead><tr><th data-field='label'>Week of</th><th data-field='days_live'>Days live</th><th data-field='live_hours_per_day'>Live hours a day</th><th data-field='attempts'>Seed attempts</th><th data-field='reached_20_pct' data-fmt='pct'>Reached 20</th><th data-field='typical_minutes_to_20'>Typical minutes to 20</th><th data-field='players_per_day' data-fmt='int'>Players a day</th><th data-field='steam_players' data-fmt='int'>Players in the game, daily high</th><th data-field='per_10000'>Per 10,000</th><th data-field='admins_seeded'>Admins who seeded</th><th data-field='admin_share_pct' data-fmt='pct'>Admin share of seeding</th></tr></thead><tbody data-draw='rows'></tbody></table></div></div>
+</details>
+</section>
+</div>
+
+<div class='pg-pane' data-tab='deep' hidden>
+<section id='deep-short'>
+<h2>The answer</h2>
+<div class='pg-col'><ul>
+<li><b>Aim for 10, not 20.</b> Once 10 players are on, <b data-draw='v' data-source='deep_summary' data-field='tip_10_pct' data-row='0' data-fmt='pct'>—</b> of attempts go on to 20.</li>
+<li><b>The wait is for the first five.</b> They take <b data-draw='v' data-source='deep_summary' data-field='first5_share_pct' data-row='0' data-fmt='pct'>—</b> of the whole seeding time.</li>
+<li><b>An admin on early matters.</b> <b data-draw='v' data-source='deep_summary' data-field='adm_early_pct' data-row='0' data-fmt='pct'>—</b> of attempts reached 20 with one on, <b data-draw='v' data-source='deep_summary' data-field='no_adm_early_pct' data-row='0' data-fmt='pct'>—</b> with none.</li>
+<li><b>Busy servers start in the morning.</b> They are live by about <b data-draw='v' data-source='deep_summary' data-field='peer_goes_live' data-row='0'>—</b>. Redline Infantry goes live around <b data-draw='v' data-source='deep_summary' data-field='inf_goes_live' data-row='0'>—</b>.</li>
+</ul></div>
+<p class='pg-note'>From all <span data-draw='v' data-source='deep_summary' data-field='attempts' data-row='0'>—</span> seed attempts: <span data-draw='v' data-source='deep_summary' data-field='reached_20' data-row='0'>—</span> reached 20 and <span data-draw='v' data-source='deep_summary' data-field='failed' data-row='0'>—</span> did not. These show what goes together, not what causes what.</p>
+</section>
+
+<section id='deep-factors'>
+<h2>1. What goes with a seed working</h2>
+<p class='pg-ans'>Who is on in the first half hour. Not the day or the hour.</p>
+<div class='pg-col' id='factors-chart'><h3>How strongly each thing goes with reaching 20</h3><div class='pg-chart' data-draw='hbars' data-source='factors' data-x='short' data-y='link_strength' data-text='strength' data-left='210' data-unit='link strength, 0 to 1' data-label='How strongly each factor goes with a seed attempt reaching 20; a longer bar is a stronger link'></div><p class='pg-note'>A longer bar is a stronger link. The word at the end says how strong. A top seeder is one of the 25 players who have helped most seeds.</p></div>
+<details><summary>See the numbers: every factor compared</summary>
+<div class='pg-col' id='factors-box'><div class='pg-scroll'><table id='factors-table' data-source='factors' data-row-key='factor'><thead><tr><th data-field='factor'>When this was true</th><th data-field='reached_20_with_pct' data-fmt='pct'>Reached 20</th><th data-field='attempts_with'>Attempts</th><th data-field='reached_20_without_pct' data-fmt='pct'>Reached 20 when it was not</th><th data-field='attempts_without'>Attempts</th><th data-field='difference_points' data-fmt='pts'>Difference</th></tr></thead><tbody data-draw='rows'></tbody></table></div><p class='pg-note'>An admin is anyone on the admin roster, counted from the day they joined the team. Groups with few attempts are a pointer only.</p></div>
+</details>
+</section>
+
+<section id='deep-tipping'>
+<h2>2. The tipping point</h2>
+<p class='pg-ans'>Ten players. After that it almost always finishes.</p>
+<div class='pg-col' id='tipping-chart'><h3>Share of attempts that went on to 20, once this many were on</h3><div class='pg-chart' data-draw='bars' data-source='tipping' data-x='reached' data-y='went_on_to_20_pct' data-unit='percent went on to 20' data-n='attempts' data-n-unit='attempts got this far' data-label='Share of seed attempts that went on to reach 20, by the number of players they had reached'></div></div>
+<details><summary>See the numbers: where failed attempts stalled</summary>
+<div class='pg-col' id='stalls-box'><div class='pg-scroll'><table id='stalls-table' data-source='stalls' data-row-key='where'><thead><tr><th data-field='where'>The attempt</th><th data-field='attempts'>Attempts</th><th data-field='share_pct' data-fmt='pct'>Share of failures</th><th data-field='typical_minutes_before_it_ended'>Typical minutes before it ended</th></tr></thead><tbody data-draw='rows'></tbody></table></div><p class='pg-note'>Attempts that stall partway run for hours before giving up.</p></div>
+</details>
+</section>
+
+<section id='deep-time'>
+<h2>3. Where the time goes</h2>
+<p class='pg-ans'>Waiting for the first five players.</p>
+<div class='pg-col' id='stages-chart'><h3>Typical minutes in each stage</h3><div class='pg-chart' data-draw='hbars' data-source='stages' data-x='stage' data-y='typical_minutes' data-unit='minutes, typical' data-label='Typical minutes spent in each stage of a seed that reached 20'></div></div>
+<details><summary>See the numbers: what goes with a faster seed</summary>
+<div class='pg-col' id='speed-box'><div class='pg-scroll'><table id='speed-table' data-source='speed' data-row-key='factor'><thead><tr><th data-field='factor'>When this was true</th><th data-field='typical_minutes_with'>Typical minutes to 20</th><th data-field='typical_minutes_without'>When it was not</th><th data-field='minutes_saved'>Minutes saved</th></tr></thead><tbody data-draw='rows'></tbody></table></div><p class='pg-note'>Seeds that reached 20 only. Getting five players on in the first 15 minutes saves the most time.</p></div>
+</details>
+</section>
+
+<section id='deep-who'>
+<h2>4. Who seeds, and who could</h2>
+<p class='pg-ans'>A small core does most of it, and half the seeding time is the admin team. Hundreds of regulars have never seeded.</p>
+<div class='pg-col' id='who-deep-cards'><div class='pg-cards'>
+<div class='pg-card'><span class='pg-k'>Admins who have not seeded in the last 30 days</span><span class='pg-n' data-draw='v' data-source='deep_summary' data-field='admins_not_30' data-row='0' data-fmt='int'>—</span><span class='pg-s'>of <span data-draw='v' data-source='deep_summary' data-field='admins' data-row='0'>—</span> on the team</span></div>
+<div class='pg-card'><span class='pg-k'>Recent regulars who have never seeded</span><span class='pg-n' data-draw='v' data-source='deep_summary' data-field='regulars_never_seeded_recent' data-row='0' data-fmt='int'>—</span></div>
+<div class='pg-card'><span class='pg-k'>Players who seeded once and never again</span><span class='pg-n' data-draw='v' data-source='deep_summary' data-field='once_players' data-row='0' data-fmt='int'>—</span></div>
+</div></div>
+<details><summary>See the numbers: the admin team, repeat seeders and months</summary>
+<div class='pg-two'>
+<div class='pg-col' id='who-box'><h3>The admin team and everyone else</h3><div class='pg-scroll'><table id='who-table2' data-source='who' data-row-key='group'><thead><tr><th data-field='group'>Group</th><th data-field='seeders'>Seeders</th><th data-field='seeding_hours'>Hours seeding</th><th data-field='share_of_hours_pct' data-fmt='pct'>Share</th></tr></thead><tbody data-draw='rows'></tbody></table></div><h4>The admin team by role</h4><div class='pg-scroll'><table id='roles-table' data-source='admin_roles' data-row-key='role'><thead><tr><th data-field='role'>Role</th><th data-field='people'>People</th><th data-field='have_seeded'>Have seeded</th><th data-field='seeded_last_30_days'>Seeded in the last 30 days</th><th data-field='share_of_all_seeding_pct' data-fmt='pct'>Share of all seeding time</th></tr></thead><tbody data-draw='rows'></tbody></table></div><p class='pg-note'>Seeding counts from the day each person joined the team.</p></div>
+<div class='pg-col' id='funnel-chart'><h3>Players by how many times they have seeded</h3><div class='pg-chart' data-draw='hbars' data-source='funnel' data-x='group' data-y='players' data-unit='players' data-label='Number of players by how many seed attempts they have joined'></div><h4>Month by month</h4><div class='pg-scroll'><table id='month-table' data-source='by_month' data-row-key='month'><thead><tr><th data-field='month'>Month</th><th data-field='attempts'>Attempts</th><th data-field='reached_20_pct' data-fmt='pct'>Reached 20</th><th data-field='different_seeders'>Different seeders</th></tr></thead><tbody data-draw='rows'></tbody></table></div></div>
+</div>
+</details>
+</section>
+
+<section id='deep-peers'>
+<h2>5. What the busiest servers do</h2>
+<p class='pg-ans'>They go live in the morning, nearly every day.</p>
+<div class='pg-col' id='peer-cards'><div class='pg-cards'>
+<div class='pg-card'><span class='pg-k'>Ten busiest servers: days live</span><span class='pg-n' data-draw='v' data-source='deep_summary' data-field='peer_days_live_pct' data-row='0' data-fmt='pct'>—</span><span class='pg-s'>live around <span data-draw='v' data-source='deep_summary' data-field='peer_goes_live' data-row='0'>—</span></span></div>
+<div class='pg-card'><span class='pg-k'>RLG Infantry: days live</span><span class='pg-n' data-draw='v' data-source='deep_summary' data-field='inf_days_live_pct' data-row='0' data-fmt='pct'>—</span><span class='pg-s'>live around <span data-draw='v' data-source='deep_summary' data-field='inf_goes_live' data-row='0'>—</span></span></div>
+<div class='pg-card'><span class='pg-k'>RLG Vanilla: days live</span><span class='pg-n' data-draw='v' data-source='deep_summary' data-field='van_days_live_pct' data-row='0' data-fmt='pct'>—</span><span class='pg-s'>live around <span data-draw='v' data-source='deep_summary' data-field='van_goes_live' data-row='0'>—</span></span></div>
+</div><p class='pg-note'>Over the last 30 days.</p></div>
+<details id='peers-more'><summary>See the numbers: every server compared, and how other communities reward seeders</summary>
+<div class='pg-col' id='tactics-box'><h3>What the busier servers have in common</h3><div class='pg-scroll'><table id='tactics-table' data-source='tactics' data-row-key='tactic'><thead><tr><th data-field='tactic'>Servers that</th><th data-field='servers_with'>Servers</th><th data-field='days_live_with_pct' data-fmt='pct'>Days live</th><th data-field='hours_per_day_with'>Live hours a day</th><th data-field='servers_without'>Servers that do not</th><th data-field='days_live_without_pct' data-fmt='pct'>Days live</th><th data-field='hours_per_day_without'>Live hours a day</th></tr></thead><tbody data-draw='rows'></tbody></table></div></div>
+<div class='pg-col'><div class='pg-scroll pg-tall'><table id='peers-table' data-source='peers' data-row-key='key'><thead><tr><th data-field='server'>Server</th><th data-field='rank'>Rank</th><th data-field='mode'>Mode</th><th data-field='days_live_pct' data-fmt='pct'>Days live</th><th data-field='live_hours_per_day'>Live hours a day</th><th data-field='goes_live_around'>Goes live around</th></tr></thead><tbody data-draw='rows'></tbody></table></div></div>
+<div class='pg-col' id='others-box'><h3>How other communities get players to seed</h3><ul>
+<li><b>An opt-in Seeder role and a ping.</b> <a href='https://averon.gg/blog/wardogs-seeding-explained-priority-queue' target='_blank' rel='noopener'>averon.gg</a></li>
+<li><b>Automatic rewards for seeding time,</b> such as priority queue or reserved access. <a href='https://wardogs.blksun.org/' target='_blank' rel='noopener'>wardogs.blksun.org</a></li>
+<li><b>A public seeder leaderboard.</b> <a href='https://theuncsgaming.com/' target='_blank' rel='noopener'>theuncsgaming.com</a></li>
+<li><b>A fixed seeding schedule.</b> <a href='https://guildorder.com/games/wardogs/wiki/seeding-nights-and-house-rules' target='_blank' rel='noopener'>guildorder.com</a></li>
+<li><b>Bots that call and reward for you.</b> <a href='https://docs.wardogsbot.com/' target='_blank' rel='noopener'>docs.wardogsbot.com</a>, <a href='https://agentwardog.com/' target='_blank' rel='noopener'>agentwardog.com</a></li>
+<li><b>Trading seeders with other communities.</b> <a href='https://seedmyserver.com/games/wardogs' target='_blank' rel='noopener'>seedmyserver.com</a></li>
+</ul><p class='pg-note'>From these communities and tools, read on November 22, 2026. This is what they say they do, not something measured here.</p></div>
+</details>
+</section>
+
+<section id='deep-plan'>
+<h2>What to try, in order</h2>
+<div class='pg-col'><ul>
+<li><b>Seed as a squad of five at a set time,</b> with at least one admin in it.</li>
+<li><b>Call for 10, not 20.</b></li>
+<li><b>Do not quit early.</b> If still under 5 after an hour and a half, send a fresh call.</li>
+<li><b>Move the seed to late morning.</b></li>
+<li><b>Add a Seeder role with an automatic reward,</b> and ask the regulars who have never seeded.</li>
+</ul></div>
+</section>
+</div>
+
+<div class='pg-pane' data-tab='moves' hidden>
+<section id='moves-short'>
+<h2>The answer</h2>
+<div class='pg-col'><ul>
+<li><b>Mostly the game itself.</b> Redline has good days when Wardogs has more players. The game went from about <b data-draw='v' data-source='corr_summary' data-field='steam_first' data-row='0' data-fmt='int'>—</b> players at its daily high in <span data-draw='v' data-source='corr_summary' data-field='share_first_month' data-row='0'>—</span> to <b data-draw='v' data-source='corr_summary' data-field='steam_last' data-row='0' data-fmt='int'>—</b> in <span data-draw='v' data-source='corr_summary' data-field='share_last_month' data-row='0'>—</span>.</li>
+<li><b>Our share of the game is the number to watch.</b> Of every 10,000 players in the game, <b data-draw='v' data-source='corr_summary' data-field='share_first' data-row='0'>—</b> came through Redline in <span data-draw='v' data-source='corr_summary' data-field='share_first_month' data-row='0'>—</span> and <b data-draw='v' data-source='corr_summary' data-field='share_last' data-row='0'>—</b> in <span data-draw='v' data-source='corr_summary' data-field='share_last_month' data-row='0'>—</span>.</li>
+<li><b>Of the things we control, being live yesterday is the strongest.</b> Admins playing is next.</li>
+<li><b>Discord posts on their own do little.</b> A seed call posted by a person shows no link with a better day.</li>
+<li><b>Steam reviews follow the mood of the game, not ours.</b></li>
+</ul></div>
+<p class='pg-note'>One row per day for <span data-draw='v' data-source='corr_summary' data-field='days' data-row='0'>—</span> days. A longer bar means that thing and Redline having more live hours went together more often. Going together is not the same as causing.</p>
+</section>
+
+<section id='moves-not'>
+<h2>1. Things we cannot change</h2>
+<p class='pg-ans'>Redline rises and falls with the game and with other servers.</p>
+<div class='pg-col' id='links-not-chart'><div class='pg-chart' data-draw='hbars' data-source='links_not' data-x='short' data-y='link_size' data-text='reading' data-left='210' data-unit='link strength, 0 to 1' data-label='How strongly each outside factor goes with Redline live hours that day; a longer bar is a stronger link'></div><p class='pg-note'>More means more live hours for Redline. When the other busy servers have a good day, so does Redline, which points to the whole game and not to anything Redline did.</p></div>
+</section>
+
+<section id='moves-ours'>
+<h2>2. Things we can change</h2>
+<p class='pg-ans'>Keep the streak going, and have admins playing.</p>
+<div class='pg-col' id='links-ours-chart'><div class='pg-chart' data-draw='hbars' data-source='links_ours' data-x='short' data-y='link_size' data-text='reading' data-left='210' data-unit='link strength, 0 to 1' data-label='How strongly each factor Redline controls goes with its live hours that day; a longer bar is a stronger link'></div><p class='pg-note'>Admins and Discord are busier on live days partly because the server is live, so those two go both ways. Once the size of the game is allowed for, community Discord chatter drops to a weak link. Discord figures cover September 15 to November 17, 2026 only.</p></div>
+<details><summary>See the numbers: every link, before and after allowing for the size of the game</summary>
+<div class='pg-col'><div class='pg-scroll'><table id='links-table' data-source='links' data-row-key='factor'><thead><tr><th data-field='factor'>Factor</th><th data-field='days'>Days</th><th data-field='link'>Link</th><th data-field='strength'>Strength</th><th data-field='link_after_game'>Link after allowing for the game</th><th data-field='strength_after_game'>Strength</th><th data-field='live_hours_when_high'>Live hours when high</th><th data-field='live_hours_when_low'>When low</th></tr></thead><tbody data-draw='rows'></tbody></table></div><p class='pg-note'>Link runs from -1 to 1. 0.5 or more is strong, 0.3 moderate, 0.15 weak. The second link takes the daily player count of the game out of both sides first, so it shows what is left that the game does not explain. Live hours when high and when low compare days above and below the middle value of that factor.</p></div>
+</details>
+</section>
+
+<section id='moves-share'>
+<h2>3. Are we keeping our share of the game?</h2>
+<p class='pg-ans'>A falling bar means we are losing ground the game does not explain.</p>
+<div class='pg-col' id='share-chart'><h3>Redline players a day for every 10,000 players in the game</h3><div class='pg-chart' data-draw='bars' data-source='share' data-x='month' data-y='redline_per_10000' data-unit='Redline players per 10,000 in the game' data-label='Redline players a day for every 10,000 players in the game at its daily high, by month'></div><p class='pg-note'>This takes the size of the game out of the picture. October 2026 held steady, so that drop was the game. November 2026 fell because neither server went live from November 3 to 11.</p></div>
+<details><summary>See the numbers: by month</summary>
+<div class='pg-col'><div class='pg-scroll'><table id='share-table' data-source='share' data-row-key='month'><thead><tr><th data-field='month'>Month</th><th data-field='steam_players' data-fmt='int'>Players in the game, daily high</th><th data-field='redline_players_per_day' data-fmt='int'>Redline players a day</th><th data-field='redline_per_10000'>Per 10,000</th><th data-field='days_live_pct' data-fmt='pct'>Days live</th><th data-field='live_hours_per_day'>Live hours a day</th></tr></thead><tbody data-draw='rows'></tbody></table></div></div>
+</details>
+</section>
+
+<section id='moves-admins'>
+<h2>4. Does it matter how many admins seed?</h2>
+<p class='pg-ans'>Without the team nothing happens. Past two or three, more admins add little.</p>
+<div class='pg-col' id='admin-days-box'><div class='pg-scroll'><table id='admin-days-table' data-source='admin_days' data-row-key='admins_seeding'><thead><tr><th data-field='admins_seeding'>Admins on a server before it reached 20</th><th data-field='days'>Days</th><th data-field='went_live_pct' data-fmt='pct'>Days that went live</th><th data-field='live_hours'>Live hours that day</th></tr></thead><tbody data-draw='rows'></tbody></table></div><p class='pg-note'>On the days no admin seeded, neither server went live. Those were days nobody tried, so this shows seeding does not start without the team.</p></div>
+</section>
+
+<section id='moves-reviews'>
+<h2>5. Steam reviews and the mood of the game</h2>
+<p class='pg-ans'>Reviews turned negative at Season 2 and players left the game. Redline fell with it.</p>
+<div class='pg-col' id='reviews-chart'><h3>Share of Steam reviews that were positive, by week</h3><div class='pg-chart' data-draw='bars' data-source='reviews' data-x='week' data-y='positive_pct' data-unit='percent of reviews positive' data-n='reviews' data-n-unit='reviews that week' data-label='Share of Steam reviews for Wardogs that were positive each week'></div><p class='pg-note'>Season 2 began October 15, 2026. Players complained that progression was too fast and about cheaters, and the studio called its changes a mistake (<a href='https://www.vice.com/en/article/wardogs-developer-responds-to-season-2-backlash/' target='_blank' rel='noopener'>Vice</a>, <a href='https://www.keengamer.com/articles/news/wardogs-developer-responds-to-player-criticism-of-season-2/' target='_blank' rel='noopener'>KeenGamer</a>). The jump in the week of November 5 follows the studio asking players to leave reviews and saying it had removed 185,000 cheaters (<a href='https://geeksandgamers.com/wardogs-season-3-will-focus-on-stability-as-bulkhead-removes-185000-cheaters/' target='_blank' rel='noopener'>Geeks and Gamers</a>). Review counts are from Steam; the wording of reviews was not read.</p></div>
+<details><summary>See the numbers: reviews beside players and Redline, week by week</summary>
+<div class='pg-col'><div class='pg-scroll pg-tall'><table id='reviews-table' data-source='reviews' data-row-key='week'><thead><tr><th data-field='label'>Week of</th><th data-field='reviews' data-fmt='int'>Reviews</th><th data-field='positive_pct' data-fmt='pct'>Positive</th><th data-field='steam_players' data-fmt='int'>Players in the game, daily high</th><th data-field='redline_players_per_day' data-fmt='int'>Redline players a day</th><th data-field='redline_live_hours_per_day'>Redline live hours a day</th></tr></thead><tbody data-draw='rows'></tbody></table></div><p class='pg-note'>Day by day the link between reviews and Redline is weak. The reviews matter because they move the size of the game, and the size of the game moves Redline.</p></div>
+</details>
+</section>
+
+<section id='moves-peers'>
+<h2>6. What other servers show</h2>
+<p class='pg-ans'>Going live early goes with more live hours.</p>
+<div class='pg-col' id='peer-links-chart'><div class='pg-chart' data-draw='hbars' data-source='peer_links' data-x='short' data-y='link_size' data-text='reading' data-left='210' data-unit='link strength, 0 to 1' data-label='Across the busiest other North America community servers, how strongly each trait goes with live hours a day'></div><p class='pg-note'>The other busy community servers in North America over the last 30 days. More means more live hours a day, fewer means fewer.</p></div>
+</section>
+
+<section id='moves-missing'>
+<h2>What this page cannot see</h2>
+<div class='pg-col'><ul>
+<li><b>In-game chat.</b> It is not part of the data this page reads.</li>
+<li><b>What the reviews say.</b> Only the counts are read.</li>
+<li><b>The Redline queue.</b> Neither BattleMetrics nor WarCon reports it.</li>
+<li><b>Discord after November 17, 2026.</b> Those figures come from a one-time export, and only message counts were used.</li>
+</ul></div>
+</section>
+
+<section id='moves-do'>
+<h2>What this means</h2>
+<div class='pg-col'><ul>
+<li><b>Protect the streak.</b> A dark day makes the next day harder, so a short seeded night is worth more than it looks.</li>
+<li><b>Judge Redline against the game.</b> Watch players per 10,000 in the game, not the raw count.</li>
+<li><b>Do not rely on Discord posts to seed.</b> People in the server do it.</li>
+<li><b>Expect dips you did not cause.</b> Seasons fade after a week, and outside releases pull players away.</li>
+</ul></div>
+</section>
+</div>
+
+<details id='definitions'><summary>How these numbers are worked out</summary>
+<p class='pg-note'>Built every Monday from BattleMetrics, WarCon and Steam; not a live feed. Typical means the middle value. Player counts are rebuilt minute by minute from BattleMetrics join and leave records; a session with no recorded end, or longer than 4 hours, is counted as 40 minutes. A seed attempt is a stretch where a server goes from empty to at least 3 players. A new player is the first ever join on that server. A match change is the end of one match and the start of the next with 60 or more players on, from WarCon; lost a third means two thirds or fewer were left 30 minutes later. Mode figures cover community servers that had 3 or more players on at some point in the week. Season dates are the official posts on Steam. Players in the game is the daily high from steamcharts.com. Links are Spearman rank correlations over days. Counts that depend on a 10-minute cut-off, such as how many players seeded once, can move by a few either way. The scripts are in the <a href='https://github.com/bonannotjb-prog/RLG-Discord-leaderboard/tree/main/growth'>growth folder of the repository</a>.</p>
+</details>
+</div>
+<script src='d3.min.js'></script>
+<script src='dash.js'></script>
+<script src='app.js'></script>
+</body>
+</html>
