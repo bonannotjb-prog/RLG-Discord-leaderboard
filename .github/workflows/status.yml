@@ -32,6 +32,9 @@ env:
   SEED_ROLE_ID: "1574463353081045043"   # Discord role to ping (digits only)
   SEED_MIN: "1"
   SEED_MAX: "20"
+  SEED_START_PLAYERS: "3"      # players needed before the role is pinged
+  SEED_START_MINUTES: "3"      # how long they must stay before the ping
+  SEED_PUSH_AT: "15"           # player count for the "final push" ping; 0 turns it off
   SEED_COOLDOWN_MINUTES: "90"  # shortest gap between pings for the same server
   SEED_ALERT_ON_DROP: "0"      # 1 = also ping when a full server falls back to 20 or fewer
 
