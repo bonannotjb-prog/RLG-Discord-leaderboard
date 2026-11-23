@@ -12,7 +12,7 @@ Settings come from environment variables (set in .github/workflows/leaderboard.y
   LB_SORT              kills | deaths | kd | perHour | playtime | seeded |
                        matches | wins | winRate | cash    (default kills)
   LB_MIN_MINUTES       playtime floor to appear on the board (default 60)
-  LB_TOP               rows to show per server, 1-25       (default 15)
+  LB_TOP               players to show per server, 1-25    (default 10)
   DRY_RUN              set to 1 to print the message instead of sending it
 """
 import json
@@ -29,7 +29,7 @@ WEBHOOK = os.environ.get("DISCORD_WEBHOOK_URL", "").strip()
 RANGE = os.environ.get("LB_RANGE", "current")
 SORT = os.environ.get("LB_SORT", "kills")
 MIN_MINUTES = os.environ.get("LB_MIN_MINUTES", "60")
-TOP = max(1, min(25, int(os.environ.get("LB_TOP", "15"))))
+TOP = max(1, min(25, int(os.environ.get("LB_TOP", "10"))))
 DRY_RUN = os.environ.get("DRY_RUN") == "1"
 STATE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "state", "message_id.txt")
 UA = "rlg-leaderboard-bot/1.0 (GitHub Actions; Discord webhook)"
@@ -57,50 +57,56 @@ def get_json(path, params=None):
     return http("GET", url)
 
 
-def clean(name, width):
-    """Make a player name safe inside a Discord code block and fit the column."""
-    name = "".join(ch if ch.isprintable() else " " for ch in str(name)).replace("`", "'").strip()
-    if len(name) > width:
-        name = name[: width - 1] + "…"
-    return name.ljust(width)
+def cell(name, width):
+    """A player name that is safe inside a code block and never wraps its column."""
+    name = "".join(ch if ch.isprintable() else " " for ch in str(name or "unknown")).replace("`", "'").strip()
+    return name if len(name) <= width else name[: width - 1] + "…"
 
 
-def hours(minutes):
-    return f"{minutes / 60:.1f}h"
+def block(lines):
+    return "```\n" + "\n".join(lines) + "\n```"
 
 
 def build_embed(server_id):
+    """One card per server, laid out as three columns that sit side by side:
+    players, then kills and deaths, then K/D, wins and hours. Each column is kept
+    narrow enough (16 characters) that Discord never wraps a row."""
     status = get_json(f"/api/public/servers/{server_id}").get("server", {})
     board = get_json(f"/api/public/servers/{server_id}/leaderboard",
                      {"range": RANGE, "sort": SORT, "minMinutes": MIN_MINUTES})
     rows = board.get("rows", [])[:TOP]
-
-    lines = [f"{'#':>2}  {'Player':<18} {'K':>5} {'D':>5} {'K/D':>6} {'Wins':>4} {'Time':>7}"]
-    for r in rows:
-        kd = r["kills"] / r["deaths"] if r.get("deaths") else float(r.get("kills", 0))
-        lines.append(
-            f"{r['rank']:>2}  {clean(r['name'], 18)} {r['kills']:>5} {r['deaths']:>5} "
-            f"{kd:>6.2f} {r.get('wins', 0):>4} {hours(r.get('minutes', 0)):>7}"
-        )
-    if not rows:
-        lines.append("No players on the board yet.")
+    players, combat, record = [], [], []
+    for i, r in enumerate(rows, 1):
+        kills, deaths = r.get("kills", 0), r.get("deaths", 0)
+        kd = kills / deaths if deaths else float(kills)
+        players.append(f"{r.get('rank', i):>2} {cell(r.get('name'), 13)}")
+        combat.append(f"{kills:>6} {deaths:>7}")
+        record.append(f"{(f'{kd:.2f}' if kd < 100 else f'{kd:.0f}'):>5} {r.get('wins', 0):>4} {r.get('minutes', 0) / 60:>5.1f}")
 
     page = f"{ORIGIN}/s/{server_id}/leaderboard"
+    name = str(status.get("name") or "Leaderboard").split(" - ")[0].strip()
     online = f"{status.get('players', '?')}/{status.get('maxPlayers', '?')} online"
     where = f" on {status['map']}" if status.get("map") else ""
-    description = (
-        f"**{RANGE_LABEL.get(RANGE, RANGE)}, ranked by {SORT_LABEL.get(SORT, SORT)}** "
-        f"(at least {MIN_MINUTES} minutes played)\n"
-        f"Right now: {online}{where}\n"
-        "```\n" + "\n".join(lines) + "\n```"
-        f"{board.get('total', len(rows))} players ranked. [Full leaderboard]({page})\n"
-        f"Updated <t:{int(time.time())}:R>"
-    )
-    return {
-        "title": (status.get("name") or "Leaderboard")[:256],
+    embed = {
+        "title": f"\u2694\ufe0f Top {len(rows) or TOP}: {name} \u2694\ufe0f"[:256],
         "url": page,
-        "description": description[:4096],
+        "description": (f"{RANGE_LABEL.get(RANGE, RANGE)}, ranked by {SORT_LABEL.get(SORT, SORT)} "
+                        f"(at least {MIN_MINUTES} minutes played)\n"
+                        f"Right now: **{online}**{where}"),
+        "color": 0x2ECC71,
     }
+    if rows:
+        embed["fields"] = [
+            {"name": "\U0001F194 Player", "value": block(players), "inline": True},
+            {"name": "\U0001F52A Kills \u2003\u26B0\ufe0f Deaths", "value": block(combat), "inline": True},
+            {"name": "\u2696\ufe0f K/D \U0001F3C6 Wins \u23F1\ufe0f Hrs", "value": block(record), "inline": True},
+            {"name": "\u200b", "inline": False,
+             "value": f"{board.get('total', len(rows)):,} players ranked · [Full leaderboard]({page})\n"
+                      f"Updated <t:{int(time.time())}:R>"},
+        ]
+    else:
+        embed["description"] += "\n\nNo players on the board yet."
+    return embed
 
 
 def read_message_id():
@@ -125,9 +131,19 @@ def main():
         "allowed_mentions": {"parse": []},  # player names can never ping anyone
     }
     if DRY_RUN:
-        print(payload["embeds"][0]["title"])
+        total = 0
         for e in payload["embeds"]:
-            print(e["description"])
+            print(e["title"] + "\n" + e["description"])
+            total += len(e["title"]) + len(e["description"])
+            cols = [f["value"].strip("`\n").split("\n") for f in e.get("fields", [])[:3]]
+            if cols:
+                print(" | ".join(f["name"] for f in e["fields"][:3]))
+                for row in zip(*cols):
+                    print(" | ".join(row))
+                print(e["fields"][3]["value"])
+                print("widest column:", max(len(x) for c in cols for x in c), "characters")
+            total += sum(len(f["name"]) + len(f["value"]) for f in e.get("fields", []))
+        print("total characters:", total)
         return
     if not WEBHOOK:
         sys.exit("DISCORD_WEBHOOK_URL is not set. Add it as a repository secret.")
