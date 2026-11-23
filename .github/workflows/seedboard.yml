@@ -1,0 +1,53 @@
+name: Discord seederboard
+
+on:
+  schedule:
+    # Twice an hour. The first run reads the whole history and takes several
+    # minutes; later runs only recount the last three days.
+    - cron: "12,42 * * * *"
+  workflow_dispatch: {}   # adds a "Run workflow" button for manual runs
+
+permissions:
+  contents: write         # lets the job save its totals back to the repo
+
+concurrency:
+  group: discord-seederboard
+  cancel-in-progress: false
+
+jobs:
+  seederboard:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Count seeding time and update the board
+        env:
+          BATTLEMETRICS_TOKEN: ${{ secrets.BATTLEMETRICS_TOKEN }}
+          DISCORD_SEEDBOARD_WEBHOOK_URL: ${{ secrets.DISCORD_SEEDBOARD_WEBHOOK_URL }}
+          # BattleMetrics server ids: RLG Vanilla, then RLG Infantry.
+          BM_SERVER_IDS: "41199298,41243237"
+          SEEDBOARD_START: "2026-09-01"   # first day to count
+          SEED_MIN: "1"
+          SEED_MAX: "20"
+          SEEDBOARD_TOP: "15"
+        run: python seedboard.py
+
+      - name: Save state (totals, message id and weekly heartbeat)
+        run: |
+          # Weekly heartbeat: this file changes once a week, so the repository always
+          # has a recent commit and GitHub never pauses the schedule for inactivity.
+          mkdir -p state
+          date -u +%G-W%V > state/heartbeat-seedboard.txt
+          if [ -n "$(git status --porcelain state)" ]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add state
+            git commit -m "Update seeding totals"
+            git pull --rebase
+            git push
+          fi
