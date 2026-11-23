@@ -51,6 +51,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 DATA_FILE = os.path.join(HERE, "state", "seed_time.json")
 ID_FILE = os.path.join(HERE, "state", "seedboard_message_id.txt")
 UA = "rlg-seederboard/1.0 (GitHub Actions)"
+WAIT_SCALE = float(os.environ.get("BM_WAIT_SCALE", "1"))   # only lowered in tests
 NOW = datetime.now(timezone.utc).replace(second=0, microsecond=0)
 
 
@@ -62,46 +63,87 @@ def parse(s):
     return datetime.fromisoformat(s.replace("Z", "+00:00"))
 
 
-def bm_get(url):
-    """GET from BattleMetrics, waiting when it asks us to slow down."""
-    for attempt in range(8):
+class BMError(Exception):
+    """BattleMetrics kept failing on one request."""
+
+
+RETRY_WAITS = [3, 8, 15, 30, 60, 60]   # seconds to wait after each failed try
+
+
+def bm_get(url, waits=RETRY_WAITS):
+    """GET from BattleMetrics. Waits when it asks us to slow down, and retries
+    when it has a hiccup (HTTP 500s and timeouts are common on big pulls)."""
+    last = "no answer"
+    for attempt in range(len(waits) + 1):
         req = urllib.request.Request(url, headers={
             "Authorization": "Bearer " + TOKEN, "User-Agent": UA, "Accept": "application/json"})
         try:
-            with urllib.request.urlopen(req, timeout=40) as r:
+            with urllib.request.urlopen(req, timeout=60) as r:
                 return json.load(r)
         except urllib.error.HTTPError as e:
-            if e.code == 429:
-                wait = e.headers.get("Retry-After")
-                time.sleep(float(wait) + 1 if wait else 5 + attempt * 5)
-                continue
             detail = e.read()[:300].decode(errors="replace")
             if e.code in (401, 403):
                 sys.exit(f"BattleMetrics refused the token (HTTP {e.code}): {detail}")
-            sys.exit(f"BattleMetrics answered HTTP {e.code}: {detail}")
-        except (urllib.error.URLError, TimeoutError):
-            time.sleep(2 + attempt)
-    sys.exit("BattleMetrics did not answer after 8 tries.")
+            if e.code == 429:
+                wait = e.headers.get("Retry-After")
+                time.sleep(float(wait) + 1 if wait else 10)
+                continue
+            if e.code < 500:
+                sys.exit(f"BattleMetrics answered HTTP {e.code}: {detail}")
+            last = f"HTTP {e.code}"
+        except (urllib.error.URLError, TimeoutError, ValueError) as e:
+            last = str(getattr(e, "reason", e))
+        if attempt < len(waits):
+            time.sleep(waits[attempt] * WAIT_SCALE)
+    raise BMError(last)
+
+
+def server_start(server_id):
+    """Do not ask for days before BattleMetrics first saw the server."""
+    try:
+        created = bm_get(f"{API}/servers/{server_id}", waits=RETRY_WAITS[:3])["data"]["attributes"]["createdAt"]
+        return max(START, parse(created).replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=1))
+    except (BMError, KeyError, TypeError, ValueError):
+        return START
+
+
+def fetch_range(server_id, a, b, out):
+    q = urllib.parse.urlencode({"filter[servers]": server_id,
+                                "filter[range]": f"{iso(a)}:{iso(b)}", "page[size]": 100})
+    url, seen = f"{API}/sessions?{q}", set()
+    while url and url not in seen:
+        seen.add(url)
+        d = bm_get(url)
+        for s in d.get("data", []):
+            at = s["attributes"]
+            out[s["id"]] = (at["start"], at.get("stop"), at.get("name"),
+                            s["relationships"]["player"]["data"]["id"])
+        url = (d.get("links") or {}).get("next")
 
 
 def fetch_sessions(server_id, start, stop):
     """Every session on the server that overlaps start..stop, as
     {session id: (start, stop or None, name, player id)}."""
     out = {}
-    a = start
+    a = max(start, server_start(server_id)) if start == START else start
     while a < stop:
         b = min(a + timedelta(days=5), stop)
-        q = urllib.parse.urlencode({"filter[servers]": server_id,
-                                    "filter[range]": f"{iso(a)}:{iso(b)}", "page[size]": 100})
-        url, seen = f"{API}/sessions?{q}", set()
-        while url and url not in seen:
-            seen.add(url)
-            d = bm_get(url)
-            for s in d.get("data", []):
-                at = s["attributes"]
-                out[s["id"]] = (at["start"], at.get("stop"), at.get("name"),
-                                s["relationships"]["player"]["data"]["id"])
-            url = (d.get("links") or {}).get("next")
+        try:
+            fetch_range(server_id, a, b, out)
+        except BMError as first:
+            # The 5-day pull keeps failing: go through it one day at a time instead.
+            print(f"  {iso(a)} to {iso(b)} failed ({first}); retrying day by day", flush=True)
+            c = a
+            while c < b:
+                e = min(c + timedelta(days=1), b)
+                try:
+                    fetch_range(server_id, c, e, out)
+                except BMError as err:
+                    sys.exit(f"BattleMetrics kept failing for server {server_id}, {iso(c)} to {iso(e)} "
+                             f"({err}). Nothing was saved. Run the job again in a few minutes.")
+                c = e
+        if start == START:
+            print(f"  server {server_id}: read up to {b.strftime('%Y-%m-%d')}, {len(out)} sessions so far", flush=True)
         a = b
     return out
 
