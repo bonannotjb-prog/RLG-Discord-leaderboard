@@ -35,6 +35,12 @@ env:
   SEED_COOLDOWN_MINUTES: "90"  # shortest gap between pings for the same server
   SEED_ALERT_ON_DROP: "0"      # 1 = also ping when a full server falls back to 20 or fewer
 
+  # Match recaps. These stay switched off until the DISCORD_RECAP_WEBHOOK_URL
+  # secret exists.
+  DISCORD_RECAP_WEBHOOK_URL: ${{ secrets.DISCORD_RECAP_WEBHOOK_URL }}
+  RECAP_MIN_PLAYERS: "10"      # matches with fewer players than this get no recap
+  RECAP_TOP: "5"               # players listed in each recap
+
 jobs:
   status:
     runs-on: ubuntu-latest
@@ -59,7 +65,7 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           if [ -n "$(git status --porcelain state)" ]; then
             git add state
-            git commit -m "Save Discord status state"
+            git commit -m "Save Discord status message id"
             git pull --rebase
             git push
           fi
