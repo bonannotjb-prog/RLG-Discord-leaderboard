@@ -67,21 +67,27 @@ def block(lines):
     return "```\n" + "\n".join(lines) + "\n```"
 
 
+NAME_WIDTH = 21   # characters of the player name shown; the column is this plus the rank
+
+
 def build_embed(server_id):
-    """One card per server, laid out as three columns that sit side by side:
-    players, then kills and deaths, then K/D, wins and hours. Each column is kept
-    narrow enough (16 characters) that Discord never wraps a row."""
+    """One card per server, laid out as two columns that sit side by side: a wide
+    player column, and one stats column (kills, deaths, K/D, wins, hours). Each
+    column gets half the card, which fits about 26 characters without wrapping."""
     status = get_json(f"/api/public/servers/{server_id}").get("server", {})
     board = get_json(f"/api/public/servers/{server_id}/leaderboard",
                      {"range": RANGE, "sort": SORT, "minMinutes": MIN_MINUTES})
     rows = board.get("rows", [])[:TOP]
-    players, combat, record = [], [], []
+    players, stats = [], []
     for i, r in enumerate(rows, 1):
         kills, deaths = r.get("kills", 0), r.get("deaths", 0)
         kd = kills / deaths if deaths else float(kills)
-        players.append(f"{r.get('rank', i):>2} {cell(r.get('name'), 13)}")
-        combat.append(f"{kills:>6} {deaths:>7}")
-        record.append(f"{(f'{kd:.2f}' if kd < 100 else f'{kd:.0f}'):>5} {r.get('wins', 0):>4} {r.get('minutes', 0) / 60:>5.1f}")
+        players.append(f"{r.get('rank', i):>2} {cell(r.get('name'), NAME_WIDTH)}")
+        stats.append([str(kills), str(deaths), f"{kd:.2f}" if kd < 100 else f"{kd:.0f}",
+                      str(r.get("wins", 0)), f"{r.get('minutes', 0) / 60:.1f}"])
+    # Each number column is only as wide as its longest value, to save room.
+    widths = [max(len(row[c]) for row in stats) for c in range(5)] if stats else []
+    numbers = [" ".join(v.rjust(w) for v, w in zip(row, widths)) for row in stats]
 
     page = f"{ORIGIN}/s/{server_id}/leaderboard"
     name = str(status.get("name") or "Leaderboard").split(" - ")[0].strip()
@@ -98,8 +104,8 @@ def build_embed(server_id):
     if rows:
         embed["fields"] = [
             {"name": "\U0001F194 Player", "value": block(players), "inline": True},
-            {"name": "\U0001F52A Kills \u2003\u26B0\ufe0f Deaths", "value": block(combat), "inline": True},
-            {"name": "\u2696\ufe0f K/D \U0001F3C6 Wins \u23F1\ufe0f Hrs", "value": block(record), "inline": True},
+            {"name": "\U0001F52A K \u26B0\ufe0f D \u2696\ufe0f K/D \U0001F3C6 W \u23F1\ufe0f Hrs",
+             "value": block(numbers), "inline": True},
             {"name": "\u200b", "inline": False,
              "value": f"{board.get('total', len(rows)):,} players ranked · [Full leaderboard]({page})\n"
                       f"Updated <t:{int(time.time())}:R>"},
@@ -135,12 +141,12 @@ def main():
         for e in payload["embeds"]:
             print(e["title"] + "\n" + e["description"])
             total += len(e["title"]) + len(e["description"])
-            cols = [f["value"].strip("`\n").split("\n") for f in e.get("fields", [])[:3]]
+            cols = [f["value"].strip("`\n").split("\n") for f in e.get("fields", [])[:2]]
             if cols:
-                print(" | ".join(f["name"] for f in e["fields"][:3]))
+                print(" | ".join(f["name"] for f in e["fields"][:2]))
                 for row in zip(*cols):
                     print(" | ".join(row))
-                print(e["fields"][3]["value"])
+                print(e["fields"][2]["value"])
                 print("widest column:", max(len(x) for c in cols for x in c), "characters")
             total += sum(len(f["name"]) + len(f["value"]) for f in e.get("fields", []))
         print("total characters:", total)
