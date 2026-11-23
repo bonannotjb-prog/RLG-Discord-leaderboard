@@ -5,11 +5,13 @@ here runs unless DISCORD_SEED_WEBHOOK_URL is set.
 
 What it does, per server:
   - The count rises from below SEED_MIN into the SEED_MIN..SEED_MAX band
-    -> posts one message that pings the role.
+    -> posts one message that pings the role and lists who is on.
   - While the count stays in the band -> edits that message with the live count
-    (edits never ping again).
-  - The count passes SEED_MAX -> edits the message to say the server is seeded.
-  - The count falls below SEED_MIN -> edits the message to say the attempt ended.
+    and the current player list (edits never ping again).
+  - The count passes SEED_MAX -> edits the message to say the server is seeded
+    and thanks everyone who was on during the attempt.
+  - The count falls below SEED_MIN -> edits the message to say the attempt
+    stopped before going live, and thanks the same people.
   - No new ping for the same server until SEED_COOLDOWN_MINUTES have passed.
 
 Settings (environment variables, set in .github/workflows/status.yml):
@@ -36,6 +38,8 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 STATE_FILE = os.path.join(HERE, "state", "seed_state.json")
 
 _state = None
+_helpers = {}  # server id -> {steamId: name} for everyone seen during the current attempt.
+               # Kept in memory only, so player names are never written to the repository.
 
 
 def enabled():
@@ -57,8 +61,10 @@ def _save():
     """Write the state file and, on GitHub, commit it so the next job remembers
     the cooldown and which message to edit."""
     os.makedirs(os.path.dirname(STATE_FILE), exist_ok=True)
+    saved = {sid: {k: v for k, v in st.items() if not k.startswith("_")}
+             for sid, st in _state.items()}
     with open(STATE_FILE, "w", encoding="utf-8") as f:
-        json.dump(_state, f, indent=1, sort_keys=True)
+        json.dump(saved, f, indent=1, sort_keys=True)
     if os.environ.get("GITHUB_ACTIONS") != "true":
         return
     for cmd in (["git", "add", "state"],
@@ -73,16 +79,50 @@ def _short(name):
     return str(name or "the server").split(" - ")[0].strip()
 
 
-def _text(kind, s, page):
+def _plain(name):
+    """Show a player name as plain text: no Discord formatting, no mentions."""
+    name = "".join(ch if ch.isprintable() else " " for ch in str(name)).strip() or "unknown"
+    for ch in "\\*_~`|>[]()#":
+        name = name.replace(ch, "\\" + ch)
+    return name.replace("@", "@\u200b")[:40]
+
+
+def _names(players, limit=1200):
+    """Comma separated list of names, cut off before Discord's message size limit."""
+    shown, used = [], 0
+    for nm in sorted({_plain(x) for x in players}, key=str.lower):
+        if used + len(nm) + 2 > limit:
+            break
+        shown.append(nm)
+        used += len(nm) + 2
+    more = len(set(players)) - len(shown)
+    return ", ".join(shown) + (f" and {more} more" if more > 0 else "")
+
+
+def _roster(s):
+    """{steamId: name} for everyone on the server right now."""
+    out = {}
+    for p in s.get("roster") or []:
+        if isinstance(p, dict) and p.get("name"):
+            out[str(p.get("steamId") or p["name"])] = p["name"]
+    return out
+
+
+def _text(kind, s, page, helpers):
     name, n, cap = _short(s.get("name")), s.get("players") or 0, s.get("maxPlayers") or 0
     if kind == "seeding":
         ping = f"<@&{ROLE_ID}> " if ROLE_ID else ""
+        on_now = _roster(s)
+        who = f"So far these people are in: {_names(on_now.values())}\n" if on_now else ""
         return (f"{ping}**We are trying to seed {name}. Come and join!**\n"
-                f"Players on right now: **{n}/{cap}**\n[Server page]({page})")
+                f"Players on right now: **{n}/{cap}**\n{who}[Server page]({page})")
+    thanks = f"Thank you to {_names(helpers.values())} for helping." if helpers \
+        else "Thank you to everyone who helped."
     if kind == "seeded":
-        return (f"**Seeded: {name} passed {HIGH} players.** Thanks to everyone who jumped on.\n"
+        return (f"**{name} is live: it passed {HIGH} players.**\n{thanks}\n"
                 f"Players on right now: **{n}/{cap}**")
-    return f"**Seeding attempt on {name} ended.** The server emptied out."
+    return (f"**Seeding on {name} stopped before it went live.**\n{thanks} "
+            "We will try again next time.")
 
 
 def check(server_id, s, page, http):
@@ -95,23 +135,34 @@ def check(server_id, s, page, http):
     in_band = LOW <= n <= HIGH
     now = time.time()
     mentions = {"parse": [], "roles": [ROLE_ID]} if ROLE_ID else {"parse": []}
+    on_now = _roster(s)
+    helpers = _helpers.setdefault(server_id, {})
+    if st.get("phase") != "seeding" and not in_band:
+        helpers.clear()  # no attempt running: start the next one with an empty list
+    before = dict(helpers)
+    if in_band or st.get("phase") == "seeding":
+        helpers.update(on_now)
+    roster_changed = helpers != before or set(on_now) != set(st.get("_on", []))
+    st["_on"] = sorted(on_now)
 
     def edit(kind):
         try:
             http("PATCH", f"{WEBHOOK}/messages/{st['message_id']}",
-                 {"content": _text(kind, s, page), "allowed_mentions": {"parse": []}})
+                 {"content": _text(kind, s, page, helpers)[:2000],
+                  "allowed_mentions": {"parse": []}})
         except urllib.error.HTTPError as e:
             if e.code != 404:  # 404 = someone deleted the alert; nothing to update
                 raise
 
     if st.get("phase") == "seeding":
         if in_band:
-            if n != prev:
+            if n != prev or roster_changed:
                 edit("seeding")
         else:
             edit("seeded" if n > HIGH else "ended")
             st["phase"] = "done"
             st["last_count"] = n
+            helpers.clear()
             _save()
             print(f"Seeding on {server_id[:8]} finished at {n} players.", flush=True)
     elif in_band:
@@ -119,7 +170,8 @@ def check(server_id, s, page, http):
         dropping = prev is not None and prev > HIGH
         if (rising or (dropping and ON_DROP)) and now - st.get("last_alert", 0) >= COOLDOWN:
             created = http("POST", WEBHOOK + "?wait=true",
-                           {"content": _text("seeding", s, page), "allowed_mentions": mentions})
+                           {"content": _text("seeding", s, page, helpers)[:2000],
+                            "allowed_mentions": mentions})
             st.update(phase="seeding", last_alert=now, message_id=created["id"], last_count=n)
             _save()
             print(f"Seeding alert sent for {server_id[:8]} at {n} players.", flush=True)
