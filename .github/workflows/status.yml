@@ -26,6 +26,15 @@ env:
   STATUS_INTERVAL: "20"        # seconds between checks (minimum 10)
   STATUS_RUN_MINUTES: "330"    # keep under the job's 6 hour limit
 
+  # Seeding alerts. These stay switched off until the DISCORD_SEED_WEBHOOK_URL
+  # secret exists.
+  DISCORD_SEED_WEBHOOK_URL: ${{ secrets.DISCORD_SEED_WEBHOOK_URL }}
+  SEED_ROLE_ID: "1574463353081045043"   # Discord role to ping (digits only)
+  SEED_MIN: "1"
+  SEED_MAX: "20"
+  SEED_COOLDOWN_MINUTES: "90"  # shortest gap between pings for the same server
+  SEED_ALERT_ON_DROP: "0"      # 1 = also ping when a full server falls back to 20 or fewer
+
 jobs:
   status:
     runs-on: ubuntu-latest
@@ -42,9 +51,9 @@ jobs:
 
       - name: Save the message id (first run only)
         run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           if [ -n "$(git status --porcelain state)" ]; then
-            git config user.name "github-actions[bot]"
-            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
             git add state
             git commit -m "Save Discord status message id"
             git pull --rebase
