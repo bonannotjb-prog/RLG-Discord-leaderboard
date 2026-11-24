@@ -4,8 +4,9 @@
  },
  "2dd77c71-dbb6-49c4-95cf-78625467aba1": {
   "last_alert": 1795453780.8903234,
-  "last_count": 1,
+  "last_count": 0,
   "message_id": "1574472016914939964",
-  "phase": "seeding"
+  "peak": 8,
+  "phase": "done"
  }
 }
