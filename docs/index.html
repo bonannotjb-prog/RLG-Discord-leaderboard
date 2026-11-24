@@ -56,7 +56,7 @@ body{margin:0;background:var(--color-bg)}
 <div class='pg'>
 <header id='top'>
 <h1>Redline Gaming: getting live and growing</h1>
-<div class='pg-tabs' role='group' aria-label='Page'><button type='button' class='pg-tab' value='overview' aria-pressed='true'>Overview</button><button type='button' class='pg-tab' value='history' aria-pressed='false'>History</button><button type='button' class='pg-tab' value='deep' aria-pressed='false'>Seeding</button><button type='button' class='pg-tab' value='moves' aria-pressed='false'>What moves the numbers</button></div>
+<div class='pg-tabs' role='group' aria-label='Page'><button type='button' class='pg-tab' value='overview' aria-pressed='true'>Overview</button><button type='button' class='pg-tab' value='history' aria-pressed='false'>History</button><button type='button' class='pg-tab' value='deep' aria-pressed='false'>Seeding</button><button type='button' class='pg-tab' value='moves' aria-pressed='false'>What moves the numbers</button><button type='button' class='pg-tab' value='rank' aria-pressed='false'>Where we rank</button></div>
 <p class='pg-note'>Both Redline servers, <span data-draw='v' data-source='summary' data-field='data_from' data-row='0' data-fmt='date'>—</span> to <span data-draw='v' data-source='summary' data-field='data_through' data-row='0' data-fmt='date'>—</span>. Live means 20 or more players on. Times are US Eastern. Each section gives the answer first; open See the numbers for the detail.</p>
 <p class='pg-note'>The numbers and charts update themselves every Monday. The written conclusions were last reviewed on November 22, 2026, so check them against the History page as time passes.</p>
 </header>
@@ -344,8 +344,49 @@ body{margin:0;background:var(--color-bg)}
 </section>
 </div>
 
+<div class='pg-pane' data-tab='rank' hidden>
+<section id='rank-now'>
+<h2>Where each server stands</h2>
+<p class='pg-ans'>Rank 1 is the busiest community server in the game. A smaller number is a better place.</p>
+<div class='pg-col' id='rank-now-box'><div class='pg-scroll'><table id='rank-now-table' data-source='sl_rank' data-row-key='id'><thead><tr><th data-field='server'>Server</th><th data-field='rank_7d' data-fmt='int'>Rank, last 7 days</th><th data-field='of_7d' data-fmt='int'>Out of</th><th data-field='region'>Region</th><th data-field='region_rank_7d'>Rank in region</th><th data-field='region_of_7d'>Out of</th><th data-field='season_rank' data-fmt='int'>Rank this season</th><th data-field='season_of' data-fmt='int'>Out of</th><th data-field='season_avg_players'>Average players on, this season</th><th data-field='season_online_pct' data-fmt='pct'>Share of the season online</th></tr></thead><tbody data-draw='rows'></tbody></table></div><p class='pg-note'>Read on <span data-draw='v' data-source='sl_status' data-field='updated' data-row='0' data-fmt='date'>—</span>. The 7-day board lists the top 1,000 community servers. The rank is by average players on, counted across the whole week, so hours offline count as zero.</p></div>
+</section>
+<section id='rank-weeks'>
+<h2>Week by week</h2>
+<p class='pg-ans'>Average players on shows how busy each server was. The share shows whether Redline kept pace with the other North American community servers.</p>
+<p class='pg-note'><span data-draw='v' data-source='sl_status' data-field='weeks' data-row='0'>—</span> full weeks so far, from the week of <span data-draw='v' data-source='sl_status' data-field='first_week' data-row='0'>—</span>. These weeks run Monday to Sunday on the UTC clock, so they start Sunday evening US Eastern. A new week is added every Monday and earlier weeks are kept.</p>
+<div class='pg-two'>
+<div class='pg-col' id='rank-van'><h3>Vanilla: average players on</h3><div class='pg-chart' data-draw='bars' data-source='sl_weeks' data-x='week' data-y='van_avg_players' data-unit='players on, average' data-n='van_rank' data-n-unit='was its rank that week' data-label='Average players on the Vanilla server, each week'></div></div>
+<div class='pg-col' id='rank-inf'><h3>Infantry: average players on</h3><div class='pg-chart' data-draw='bars' data-source='sl_weeks' data-x='week' data-y='inf_avg_players' data-unit='players on, average' data-n='inf_rank' data-n-unit='was its rank that week' data-label='Average players on the Infantry server, each week'></div></div>
+<div class='pg-col' id='rank-share'><h3>Redline players for every 1,000 on North American community servers</h3><div class='pg-chart' data-draw='bars' data-source='sl_weeks' data-x='week' data-y='per_1000_na' data-unit='of every 1,000 players' data-n='na_community_players' data-n-unit='on North American community servers, average' data-label='Redline players for every 1,000 players on North American community servers, each week'></div><p class='pg-note'>A level bar while players fall means the whole game shrank and Redline held its place.</p></div>
+</div>
+<details><summary>See the numbers: every week</summary>
+<div class='pg-col'><div class='pg-scroll pg-tall'><table id='rank-weeks-table' data-source='sl_weeks' data-row-key='week'><thead><tr><th data-field='label'>Week of</th><th data-field='van_rank' data-fmt='int'>Vanilla rank</th><th data-field='van_avg_players'>Vanilla average players</th><th data-field='van_online_pct' data-fmt='pct'>Vanilla online</th><th data-field='inf_rank' data-fmt='int'>Infantry rank</th><th data-field='inf_avg_players'>Infantry average players</th><th data-field='inf_online_pct' data-fmt='pct'>Infantry online</th><th data-field='van_of' data-fmt='int'>Servers ranked</th><th data-field='na_community_players' data-fmt='int'>Players on North American community servers</th><th data-field='per_1000_na'>Redline per 1,000</th></tr></thead><tbody data-draw='rows'></tbody></table></div></div>
+</details>
+</section>
+<section id='rank-hours'>
+<h2>When North America plays, and when seeds work</h2>
+<p class='pg-ans'>Post ads and start seeds when players are online. The second chart shows which start hours most often got a server to 20.</p>
+<div class='pg-two'>
+<div class='pg-col' id='rank-hours-players'><h3>Players on North American community servers, by hour</h3><div class='pg-chart' data-draw='bars' data-source='sl_hours' data-x='hour' data-y='na_community_players' data-unit='players on, average over 30 days' data-label='Average players on North American community servers at each hour of the day, US Eastern'></div><p class='pg-note'>Hours are US Eastern. Average over the last 30 days.</p></div>
+<div class='pg-col' id='rank-hours-seeds'><h3>Share of seeds that reached 20, by the hour they started</h3><div class='pg-chart' data-draw='bars' data-source='sl_hours' data-x='hour' data-y='reached_20_pct' data-unit='percent reached 20' data-n='seeds_started' data-n-unit='seeds started' data-label='Share of seeds that reached 20 players by the hour they started, US Eastern'></div><p class='pg-note'>Every community server in <span data-draw='v' data-source='sl_status' data-field='seed_region' data-row='0'>—</span>, last 14 days. A seed here is a server reaching 5 players after an hour or more under 5. Hours when fewer than 8 seeds started are left out.</p></div>
+</div>
+<details><summary>See the numbers: every hour</summary>
+<div class='pg-col'><div class='pg-scroll pg-tall'><table id='rank-hours-table' data-source='sl_hours' data-row-key='order'><thead><tr><th data-field='hour'>Hour, US Eastern</th><th data-field='na_community_players' data-fmt='int'>Players on North American community servers</th><th data-field='seeds_started'>Seeds started</th><th data-field='seeds_reached_20'>Reached 20</th><th data-field='reached_20_pct' data-fmt='pct'>Share that reached 20</th></tr></thead><tbody data-draw='rows'></tbody></table></div></div>
+</details>
+</section>
+<section id='rank-modes'>
+<h2>Infantry Only against every other rule set</h2>
+<p class='pg-ans'>Players for each server shows which kind of server the players are choosing.</p>
+<div class='pg-two'>
+<div class='pg-col' id='rank-modes-chart'><h3>Players for each server, North America</h3><div class='pg-chart' data-draw='hbars' data-source='sl_modes' data-x='mode' data-y='players_per_server' data-unit='players for each server' data-label='Average players for each North American community server, Infantry Only beside every other rule set'></div></div>
+<div class='pg-col' id='rank-modes-box'><h3>Servers and players, North America</h3><div class='pg-scroll'><table id='rank-modes-table' data-source='sl_modes' data-row-key='mode'><thead><tr><th data-field='mode'>Rule set</th><th data-field='servers' data-fmt='int'>Servers</th><th data-field='players' data-fmt='int'>Players on</th><th data-field='players_per_server'>Players for each server</th><th data-field='share_of_servers_pct' data-fmt='pct'>Share of servers</th><th data-field='share_of_players_pct' data-fmt='pct'>Share of players</th></tr></thead><tbody data-draw='rows'></tbody></table></div><p class='pg-note'>North American community servers, average over the last 30 days. Infantry Only is every server carrying that tag in the server browser.</p></div>
+</div>
+</section>
+<p class='pg-note'>Server data: <a href="https://wardogserverlist.com">WARDOGS Server List</a> (<a href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a>)</p>
+</div>
+
 <details id='definitions'><summary>How these numbers are worked out</summary>
-<p class='pg-note'>Built every Monday from BattleMetrics, WarCon and Steam; not a live feed. Typical means the middle value. Player counts are rebuilt minute by minute from BattleMetrics join and leave records; a session with no recorded end, or longer than 4 hours, is counted as 40 minutes. A seed attempt is a stretch where a server goes from empty to at least 3 players. A new player is the first ever join on that server. A match change is the end of one match and the start of the next with 60 or more players on, from WarCon; lost a third means two thirds or fewer were left 30 minutes later. Mode figures cover community servers that had 3 or more players on at some point in the week. Season dates are the official posts on Steam. Players in the game is the daily high from steamcharts.com. Links are Spearman rank correlations over days. Counts that depend on a 10-minute cut-off, such as how many players seeded once, can move by a few either way. The scripts are in the <a href='https://github.com/bonannotjb-prog/RLG-Discord-leaderboard/tree/main/growth'>growth folder of the repository</a>.</p>
+<p class='pg-note'>Built every Monday from BattleMetrics, WarCon and Steam; not a live feed. Typical means the middle value. Player counts are rebuilt minute by minute from BattleMetrics join and leave records; a session with no recorded end, or longer than 4 hours, is counted as 40 minutes. A seed attempt is a stretch where a server goes from empty to at least 3 players. A new player is the first ever join on that server. A match change is the end of one match and the start of the next with 60 or more players on, from WarCon; lost a third means two thirds or fewer were left 30 minutes later. Mode figures cover community servers that had 3 or more players on at some point in the week. Season dates are the official posts on Steam. Players in the game is the daily high from steamcharts.com. Links are Spearman rank correlations over days. The Where we rank page is read from WARDOGS Server List, which checks every server about every 5 minutes; its ranks are by average players on across the week, with hours offline counted as zero. Counts that depend on a 10-minute cut-off, such as how many players seeded once, can move by a few either way. The scripts are in the <a href='https://github.com/bonannotjb-prog/RLG-Discord-leaderboard/tree/main/growth'>growth folder of the repository</a>.</p>
 </details>
 </div>
 <script src='d3.min.js'></script>
