@@ -13,6 +13,8 @@ rebuilds every figure, saves the results in `docs/data/` and publishes the `docs
   (`discord_days.json`), the one-off game mode comparison (`lens/`), the 60 comparison servers (`ids30.json`) and
   hand-added chart markers (`events_manual.json`).
 - `docs/` is the page: `index.html`, `app.js`, `dash.js`, `d3.min.js` and the data files in `docs/data/`.
+- `growth/pipeline/serverlist_data.py` builds the "Where we rank" page from WARDOGS Server List (the `sl_*.json` files).
+  It needs the `WARDOGSERVERLIST_API_KEY` secret; without it those files are left as they are. `sl_weeks.json` is a kept history.
 - `docs/data/history.json` is the week-by-week history. Each run adds the newest full week and keeps the earlier ones.
 
 ## Secrets (Settings, Secrets and variables, Actions)
