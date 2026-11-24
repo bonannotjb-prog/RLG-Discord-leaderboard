@@ -7,6 +7,12 @@ Picture 2 puts the last four full weeks beside the four before.
 Everything is counted from BattleMetrics session records for both servers, read
 with the same token as the seederboard. No player names are shown.
 
+With the WARDOGSERVERLIST_API_KEY secret set, two more pictures follow, both from
+WARDOGS Server List: where each server ranked among community servers last week,
+and the hours of the day when seeds in the region most often reach 20. When a
+season ends it also posts each server's season card, once. Without the key, or
+if that site cannot be read, the first two pictures post as usual.
+
 How things are counted:
   - Live: 20 or more players on a server. A day is "live" if the servers were
     live for at least one hour of it in total.
@@ -24,26 +30,35 @@ Settings (environment variables, set in the workflow file):
   DISCORD_NUMBERS_WEBHOOK_URL  required, webhook on the channel for the numbers (secret)
   BATTLEMETRICS_TOKEN          required (secret, the same one the seederboard uses)
   BM_SERVER_IDS                BattleMetrics server ids, separated by commas
+  WARDOGSERVERLIST_API_KEY     optional (secret): adds the rank and seeding-hours pictures
+  WARCON_SERVER_IDS            WarCon server ids, used to find each server on Server List
   FORCE                        1 = post even if this week was already posted
   DRY_RUN                      1 = save the pictures to disk instead of posting
 """
+import json
 import os
 import statistics
 import sys
 import time
 import urllib.error
+import urllib.parse
+import urllib.request
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 import rlgimage
 import rlgpost
 import seedboard as bm   # reuses its BattleMetrics reader (retries, day-by-day fallback)
+import serverlist
 
 WEBHOOK = os.environ.get("DISCORD_NUMBERS_WEBHOOK_URL", "").strip()
 FORCE = os.environ.get("FORCE") in ("1", "true")
 DRY_RUN = os.environ.get("DRY_RUN") == "1"
 HERE = os.path.dirname(os.path.abspath(__file__))
 LAST_FILE = os.path.join(HERE, "state", "numbers_last.txt")
+SEASON_FILE = os.path.join(HERE, "state", "season_posted.txt")
+WARCON = os.environ.get("WARCON_ORIGIN", "https://console.warcon.app").rstrip("/")
+WARCON_IDS = [x.strip() for x in os.environ.get("WARCON_SERVER_IDS", "").split(",") if x.strip()]
 EASTERN = ZoneInfo("America/New_York")
 LIVE = 20          # players on for a server to count as live
 ATTEMPT = 3        # players on for a stretch to count as a seed attempt
@@ -179,6 +194,135 @@ def day(d):
     return f"{d.strftime('%B')} {d.day}"
 
 
+def listed_servers():
+    """[(short name, Server List key)] for each RLG server. The key is built from
+    the join code in WarCon's public status, so nothing extra has to be set up."""
+    out = []
+    for sid in WARCON_IDS:
+        try:
+            req = urllib.request.Request(f"{WARCON}/api/public/servers/{sid}",
+                                         headers={"User-Agent": rlgpost.UA, "Accept": "application/json"})
+            with urllib.request.urlopen(req, timeout=20) as resp:
+                s = json.loads(resp.read()).get("server", {})
+        except Exception:  # noqa: BLE001 - leave this server out of the extra pictures
+            continue
+        key = serverlist.server_key(s.get("joinCode"))
+        if key:
+            name = str(s.get("name") or "").split(" - ")[0]
+            tag = next((part.split("]")[0] for part in name.split("[")[1:] if not part.startswith("RLG]")), "")
+            out.append((tag or name or "Server", key))
+    return out
+
+
+def places(now, before):
+    """Change in rank in words. A smaller rank number is a better place."""
+    if now is None or before is None:
+        return "no data"
+    d = before - now
+    return "Level" if d == 0 else f"{'Up' if d > 0 else 'Down'} {abs(d)} place{'' if abs(d) == 1 else 's'}"
+
+
+def rank_post(servers, week):
+    """Picture: where each server ranked among community servers in the last two
+    full weeks (Server List weeks run Monday to Sunday, UTC). None if not known."""
+    rows, label = [], ""
+    for name, key in servers:
+        d = serverlist.get("/api/server-detail", ttl=600, key=key, window="30d") or {}
+        cut = (time.time() - 7 * 86400) * 1000   # a week is full once it started 7 or more days ago
+        full = sorted((w for w in d.get("weeks") or [] if w.get("week", 0) <= cut and w.get("rank")),
+                      key=lambda w: -w["week"])
+        if not full:
+            continue
+        a, b = full[0], (full[1] if len(full) > 1 else None)
+        start = datetime.fromtimestamp(a["week"] / 1000, timezone.utc)
+        label = f"Week of {day(start)}"
+        show = lambda w: f"{w['rank']:,} of {w['of']:,}" if w and w.get("of") else (f"{w['rank']:,}" if w else "no data")
+        rows.append((f"{name} · rank", show(a), show(b), places(a["rank"], b["rank"] if b else None)))
+        rows.append((f"{name} · average players on", num(a.get("avgPlayers"), 1),
+                     num(b.get("avgPlayers"), 1) if b else "no data",
+                     change(a.get("avgPlayers"), b.get("avgPlayers") if b else None)))
+    if not rows:
+        return None
+    png = rlgimage.numbers_trend(
+        "Where we rank", f"{label} · Among every community server in the game", rows,
+        footer_left="Rank 1 is the busiest · " + serverlist.CREDIT, footer_right="Updates every Monday",
+        columns=("Last week", "Week before", "Change"), first="Server")
+    return png, "**Where we rank among community servers**\n-# " + serverlist.CREDIT_LINK, f"numbers-{week}-rank.png"
+
+
+def seed_hours_post(servers, week):
+    """Picture: the hours of the day when seeds started in the region most often
+    reached 20, over the last 14 days, shown in US Eastern. None if not known."""
+    found = next((f for f in (serverlist.seed_hours(key) for _, key in servers) if f), None)
+    if not found:
+        return None
+    region, tz, hours = found
+    today = datetime.now(ZoneInfo(tz)).replace(minute=0, second=0, microsecond=0)
+    ranked = []
+    for h, (started, reached) in enumerate(hours):
+        if started >= 8:   # too few seeds at an hour says nothing
+            east = today.replace(hour=h).astimezone(EASTERN).hour
+            ranked.append((100 * reached / started, started, reached, east))
+    if not ranked:
+        return None
+    ranked.sort(key=lambda r: (-r[0], -r[1]))
+    rows = [(f"{serverlist.hour_label(east)} to {serverlist.hour_label((east + 1) % 24)} ET",
+             f"{pct:.0f}%", f"{reached} of {started}", "") for pct, started, reached, east in ranked[:6]]
+    png = rlgimage.numbers_trend(
+        "Best hours to seed", f"When seeds in {region} most often reach 20 · Last 14 days · Times are US Eastern", rows,
+        footer_left=serverlist.CREDIT,
+        footer_right="Updates every Monday", columns=("Reached 20", "Seeds", ""), first="Seed started")
+    return (png, f"**Best hours to start a seed** · every community server in {region}, hours with fewer than "
+                 "8 seeds left out\n-# " + serverlist.CREDIT_LINK, f"numbers-{week}-seed-hours.png")
+
+
+def season_cards(servers):
+    """When a season has just finished, post each server's season card from Server
+    List, once. The first time this runs it only notes the season already over."""
+    if not servers:
+        return
+    d = serverlist.get("/api/season-server", ttl=600, key=servers[0][1], season="final")
+    season = (d or {}).get("season")
+    if not season or not d.get("final"):
+        return
+    try:
+        with open(SEASON_FILE, encoding="utf-8") as f:
+            seen = f.read().strip()
+    except FileNotFoundError:
+        seen = None
+    if seen == str(season):
+        return
+    os.makedirs(os.path.dirname(SEASON_FILE), exist_ok=True)
+    with open(SEASON_FILE, "w", encoding="utf-8") as f:
+        f.write(f"{season}\n")
+    if seen is None:
+        return   # first run: that season ended before this job existed
+    for name, key in servers:
+        url = f"{serverlist.BASE}/season-card.png?" + urllib.parse.urlencode({"season": season, "key": key})
+        try:
+            with urllib.request.urlopen(urllib.request.Request(url, headers={"User-Agent": rlgpost.UA}), timeout=40) as r:
+                png = r.read()
+            rlgpost.post_image(WEBHOOK, png, f"season-{season}-{name.lower().replace(' ', '-')}.png",
+                               f"**{d.get('name') or 'Season ' + str(season)} is over: how {name} did**\n-# "
+                               + serverlist.CREDIT_LINK)
+            time.sleep(1)
+        except Exception as e:  # noqa: BLE001 - a missing card must not fail the job
+            print(f"Season card for {name} was not posted ({type(e).__name__}).", flush=True)
+
+
+def extra_posts(week):
+    """The Server List pictures. Any problem here leaves the list empty."""
+    if not serverlist.enabled():
+        print("WARDOGSERVERLIST_API_KEY is not set: skipping the rank and seeding-hours pictures.")
+        return [], []
+    try:
+        servers = listed_servers()
+        return [p for p in (rank_post(servers, week), seed_hours_post(servers, week)) if p], servers
+    except Exception as e:  # noqa: BLE001 - never let the extras stop the weekly numbers
+        print(f"Server List pictures skipped ({type(e).__name__}: {e}).", flush=True)
+        return [], []
+
+
 def main():
     if not bm.SERVERS:
         sys.exit("BM_SERVER_IDS is empty. Set it in the workflow file.")
@@ -230,6 +374,8 @@ def main():
             footer_right="Updates every Monday"),
          "**Last 4 weeks beside the 4 before**", f"numbers-{week}-last-4-weeks.png"),
     ]
+    extras, servers = extra_posts(week)
+    posts += extras
     if DRY_RUN:
         for png, text, filename in posts:
             out = os.path.join(os.environ.get("DRY_RUN_DIR", "."), filename)
@@ -249,6 +395,10 @@ def main():
             with open(LAST_FILE, "w", encoding="utf-8") as f:
                 f.write(week + "\n")
         time.sleep(1)
+    try:
+        season_cards(servers)
+    except Exception as e:  # noqa: BLE001
+        print(f"Season cards skipped ({type(e).__name__}: {e}).", flush=True)
     print(f"Posted the weekly numbers for {week}.")
 
 

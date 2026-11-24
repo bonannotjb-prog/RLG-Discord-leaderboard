@@ -17,6 +17,9 @@ Settings come from environment variables (set in .github/workflows/status.yml):
   WARCON_ORIGIN               default https://console.warcon.app
   STATUS_INTERVAL             seconds between checks, minimum 10 (default 20)
   STATUS_RUN_MINUTES          how long the loop runs before exiting (default 330)
+  WARDOGSERVERLIST_API_KEY    optional secret. With it, each picture also shows the
+                              server's rank among community servers and, when the
+                              server is full, how many players are waiting to join
   DRY_RUN                     set to 1 to save the picture to disk instead of sending it
 """
 import json
@@ -33,6 +36,7 @@ import recap
 import rlgimage
 import rlgpost
 import seed
+import serverlist
 
 ORIGIN = os.environ.get("WARCON_ORIGIN", "https://console.warcon.app").rstrip("/")
 SERVER_IDS = [s.strip() for s in os.environ.get("WARCON_SERVER_IDS", "").split(",") if s.strip()]
@@ -122,6 +126,14 @@ def build_server(server_id):
         state, note = "SEEDING", f"{seed.HIGH + 1 - players} more to go live"
     else:
         state, note = "LIVE", "Match in progress"
+    # Rank and join queue come from WARDOGS Server List. Both are left out, and the
+    # picture is drawn as before, when the key is missing or the site cannot be read.
+    key = serverlist.server_key(s.get("joinCode"))
+    rank = serverlist.standing_line(key)
+    if state == "LIVE" and cap and players >= cap - (s.get("reservedSlots") or 0) - 1:
+        queue = serverlist.waiting(key)
+        if queue is not None:
+            note = f"Full · {queue} waiting to join" if queue else "Full · queue to join"
     per_side = {}
     for p in s.get("roster") or []:
         if isinstance(p, dict) and p.get("faction"):
@@ -133,6 +145,8 @@ def build_server(server_id):
         "scores": [(f.get("name", "Faction"), f.get("score", 0), per_side.get(f.get("name"), 0))
                    for f in (s.get("scores") or [])[:3]],
     }
+    if rank:
+        panel["rank"] = rank
     return panel, s, unix(s.get("observedAt"))
 
 
@@ -144,7 +158,10 @@ def caption(sid, panel, seen):
     clock = f"match started <t:{started}:R> · " if started else ""
     # <...> around an address stops Discord adding a link preview under the picture.
     line = f"**{panel['name']}** · {clock}[Server page](<{page}>) · [Leaderboard](<{page}/leaderboard>)"
-    return line + (f" · Checked <t:{seen}:R>" if seen else "")
+    line += f" · Checked <t:{seen}:R>" if seen else ""
+    if panel.get("rank") or "waiting" in str(panel.get("note")) or "queue" in str(panel.get("note")):
+        line += "\n-# Rank and queue: " + serverlist.CREDIT_LINK   # the credit the data's licence asks for
+    return line
 
 
 def load_ids():

@@ -503,7 +503,8 @@ def status(servers, right="", footer_left="", footer_right=""):
 def status_one(s, footer_left="", footer_right=""):
     """Live status of one server as its own picture, so everything on it is larger.
     s: dict with name, state (LIVE, SEEDING, EMPTY or OFFLINE), note, players, max,
-    map, mode, weather, scores [(faction, points, players on)]."""
+    map, mode, weather, scores [(faction, points, players on)] and, optionally,
+    rank: one line of words such as 'Rank 221 of 1,000'."""
     state = str(s.get("state") or "OFFLINE").upper()
     active = state in ("LIVE", "SEEDING")
     top_h, score_h = 330, 84
@@ -535,6 +536,10 @@ def status_one(s, footer_left="", footer_right=""):
         draw.rectangle([tx, y + 36, tx + tag_w, y + 104], outline=DIM, width=3)
         text(draw, tx + tag_w / 2, y + 71, state, "bold", 40, SOFT, align="center", spacing=5)
     _bar(draw, x0 + 36, y + 262, split - 40 - (x0 + 36), 18, players / cap)
+    if s.get("rank"):
+        # Where the server stands among community servers (from WARDOGS Server List).
+        text(draw, x0 + 36, y + 306, str(s["rank"]).upper(), "semi", 26, SOFT, spacing=2,
+             max_width=split - 40 - (x0 + 36), shrink_to=17)
 
     # Right: map, mode and weather.
     draw.line([(split, y + 40), (split, y + top_h - 30)], fill=LINE, width=2)
@@ -685,19 +690,21 @@ def numbers_week(heading, subtitle, stats, right="", footer_left="", footer_righ
     return _png(canvas)
 
 
-def numbers_trend(heading, subtitle, rows, right="", footer_left="", footer_right=""):
+def numbers_trend(heading, subtitle, rows, right="", footer_left="", footer_right="",
+                  columns=("LAST 4 WEEKS", "4 BEFORE", "CHANGE"), first="MEASURE"):
     """The last four weeks beside the four before, one row per measure.
-    rows: [(measure, value now, value before, change in words such as 'Up 12%')]."""
+    rows: [(measure, value now, value before, change in words such as 'Up 12%')].
+    columns and first rename the headings, so the same table can show other things."""
     row_h = 84
     n = max(1, len(rows))
     canvas, draw = _canvas(HEADER_H + COLS_H + row_h * n + FOOT_H, f"Weekly numbers · {heading}", subtitle, right)
     x0, x1 = PAD, W - PAD
     change_x, before_x, now_x = x1 - 28, x1 - 300, x1 - 540
     y = HEADER_H + COLS_H / 2 + 2
-    text(draw, x0 + 30, y, "MEASURE", "semi", 28, DIM, spacing=3)
-    text(draw, now_x, y, "LAST 4 WEEKS", "semi", 28, DIM, align="right", spacing=3)
-    text(draw, before_x, y, "4 BEFORE", "semi", 28, DIM, align="right", spacing=3)
-    text(draw, change_x, y, "CHANGE", "semi", 28, DIM, align="right", spacing=3)
+    text(draw, x0 + 30, y, first.upper(), "semi", 28, DIM, spacing=3)
+    text(draw, now_x, y, columns[0].upper(), "semi", 28, DIM, align="right", spacing=3)
+    text(draw, before_x, y, columns[1].upper(), "semi", 28, DIM, align="right", spacing=3)
+    text(draw, change_x, y, columns[2].upper(), "semi", 28, DIM, align="right", spacing=3)
     top = HEADER_H + COLS_H
     draw.line([(x0, top - 1), (x1, top - 1)], fill=LINE, width=2)
     for i, (measure, now, before, change) in enumerate(rows):
@@ -710,4 +717,59 @@ def numbers_trend(heading, subtitle, rows, right="", footer_left="", footer_righ
         text(draw, x0 + 30, mid + 1, measure, "semi", 42, (222, 220, 216),
              max_width=now_x - nw - 36 - (x0 + 30), shrink_to=30)
     _footer(draw, top + row_h * n, footer_left, footer_right)
+    return _png(canvas)
+
+
+def gold(price, date_label, rows, days, right="", footer_left="", footer_right=""):
+    """The gold bar price as one picture. price: today's price as text.
+    date_label: the day it is for. rows: up to three (label, value, small note)
+    comparisons, each written in words. days: [(short date, price)] oldest first,
+    drawn as bars; the last one is today."""
+    top_h, chart_h = 300, 250
+    canvas, draw = _canvas(HEADER_H + 26 + top_h + chart_h + 22 + FOOT_H, "Gold bar price",
+                           "Cash for one gold bar · set once a day by the game", right)
+    x0, x1, y = PAD, W - PAD, HEADER_H + 26
+    draw.rectangle([x0, y, x1, y + top_h + chart_h], fill=ROW_A)
+    draw.rectangle([x0, y, x1, y + 5], fill=RED)
+    split = x0 + (x1 - x0) * 0.47
+
+    # Left: today's price, as large as it can be.
+    text(draw, x0 + 36, y + 62, date_label.upper(), "semi", 30, DIM, spacing=4)
+    text(draw, x0 + 36, y + 168, price, "title", 190, WHITE, max_width=split - 40 - (x0 + 36), shrink_to=110)
+    text(draw, x0 + 36, y + 262, "CASH FOR ONE GOLD BAR", "semi", 28, SOFT, spacing=3)
+
+    # Right: the comparisons, each in words so nothing depends on colour.
+    draw.line([(split, y + 36), (split, y + top_h - 20)], fill=LINE, width=2)
+    ry = y + 62
+    for label, value, note in rows[:3]:
+        text(draw, split + 40, ry - 22, label.upper(), "semi", 24, DIM, spacing=3)
+        vw = text(draw, split + 40, ry + 18, value, "bold", 46, WHITE, max_width=x1 - 36 - (split + 40), shrink_to=30)
+        if note:
+            text(draw, split + 40 + vw + 18, ry + 22, note, "text", 30, SOFT,
+                 max_width=x1 - 36 - (split + 40 + vw + 18), shrink_to=20)
+        ry += 86
+
+    # Bottom: one bar a day. Today is the last bar, drawn brighter and labelled.
+    cy0 = y + top_h
+    draw.line([(x0 + 36, cy0), (x1 - 36, cy0)], fill=LINE, width=2)
+    if days:
+        best = max(p for _, p in days) or 1
+        n = len(days)
+        left, right_edge = x0 + 36, x1 - 36
+        slot = (right_edge - left) / n
+        bar_w = max(6, min(46, slot * 0.72))
+        base, room = cy0 + chart_h - 46, chart_h - 46 - 56
+        for i, (label, p) in enumerate(days):
+            bx = left + slot * i + (slot - bar_w) / 2
+            h = max(3, round(room * p / best))
+            last = i == n - 1
+            draw.rectangle([bx, base - h, bx + bar_w, base], fill=WHITE if last else (104, 104, 112))
+            if last:
+                text(draw, min(bx + bar_w / 2, right_edge - 40), base - h - 20, "TODAY", "semi", 22, WHITE,
+                     align="center", spacing=2)
+            # A date under the first bar, the last bar and a few between.
+            if i in (0, n - 1) or (n > 12 and i % max(1, n // 6) == 0 and 2 < i < n - 3):
+                text(draw, max(left + 34, min(bx + bar_w / 2, right_edge - 34)), base + 24, label.upper(), "semi", 22,
+                     SOFT if last else DIM, align="center", spacing=1)
+    _footer(draw, y + top_h + chart_h + 22, footer_left, footer_right)
     return _png(canvas)

@@ -17,6 +17,8 @@ under it for links and live times.
 | `seedboard.py` | Seederboard picture, from BattleMetrics |
 | `awards.py` | Weekly awards picture |
 | `recap_backfill.py` | One-time run that posts past match recaps |
+| `serverlist.py` | Reads rank, join queue, seeding odds and the gold price from WARDOGS Server List |
+| `gold.py` | Gold bar price picture, replaced in place once a day |
 | `.github/workflows/*.yml` | The schedules for each job |
 
 Changing the look: swap `assets/banner.jpg` or `assets/icon.png` for a file of
@@ -266,3 +268,28 @@ It skips matches with fewer than 10 players and any match the live recap job
 already posted. When it finishes it records that in
 `state/recaps_backfilled.txt` and refuses to run again unless you tick the
 force box, which would post everything a second time.
+
+## WARDOGS Server List
+
+`serverlist.py` reads server-level and game-wide figures from
+wardogserverlist.com. WarCon and BattleMetrics stay the source for anything
+about players.
+
+**Setup:** add the key as a repository secret named `WARDOGSERVERLIST_API_KEY`
+(Settings, Secrets and variables, Actions). The key can only read. Until the
+secret exists, every job runs as it did before and simply leaves these figures out.
+
+| Where | What it adds |
+|---|---|
+| Live status pictures | The server's rank among community servers, and how many are waiting to join when it is full |
+| Seeding call | A "good hour for it" line when seeds started around that hour usually reach 20 (`SEED_SHOW_ODDS_FROM` in `status.yml`) |
+| Weekly numbers | Two more pictures: where each server ranked last week, and the best hours to start a seed. A season card for each server when a season ends |
+| Gold price (`gold.py`) | One picture kept up to date. Also needs a `DISCORD_GOLD_WEBHOOK_URL` secret for the channel |
+| Growth page | The "Where we rank" page, from `growth/pipeline/serverlist_data.py` |
+
+`SEED_HOLD_BELOW_PCT` in `status.yml` can hold a seeding call at hours when seeds
+rarely work. It is `0` (never hold) unless you change it.
+
+**Credit:** the figures are free to reuse under CC BY 4.0 with a visible credit
+and a link, so every picture, message and page that shows one carries
+"Server data: WARDOGS Server List (CC BY 4.0)". Keep that line.

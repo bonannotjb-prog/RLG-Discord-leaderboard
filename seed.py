@@ -29,12 +29,21 @@ Settings (environment variables, set in .github/workflows/status.yml):
   SEED_COOLDOWN_MINUTES      default 90
   SEED_ALERT_ON_DROP         1 = also call when a full server falls back into the
                              band; default 0 (only call when filling from quiet)
+  SEED_SHOW_ODDS_FROM        with the WARDOGSERVERLIST_API_KEY secret set, the call
+                             adds a line when seeds started around this hour in the
+                             region usually work: this percent or more reached 20
+                             (default 50; 0 never shows the line)
+  SEED_HOLD_BELOW_PCT        hold the call (no ping) when fewer than this percent of
+                             seeds started around this hour in the region reached
+                             20. Default 0, which never holds a call
 """
 import json
 import os
 import subprocess
 import time
 import urllib.error
+
+import serverlist
 
 WEBHOOK = os.environ.get("DISCORD_SEED_WEBHOOK_URL", "").strip()
 ROLE_ID = "".join(ch for ch in os.environ.get("SEED_ROLE_ID", "") if ch.isdigit())
@@ -45,6 +54,8 @@ START_WAIT = float(os.environ.get("SEED_START_MINUTES", "3")) * 60
 PUSH_AT = int(os.environ.get("SEED_PUSH_AT", "15"))
 COOLDOWN = float(os.environ.get("SEED_COOLDOWN_MINUTES", "90")) * 60
 ON_DROP = os.environ.get("SEED_ALERT_ON_DROP", "0") == "1"
+SHOW_ODDS_FROM = float(os.environ.get("SEED_SHOW_ODDS_FROM", "50"))
+HOLD_BELOW = float(os.environ.get("SEED_HOLD_BELOW_PCT", "0"))
 HERE = os.path.dirname(os.path.abspath(__file__))
 STATE_FILE = os.path.join(HERE, "state", "seed_state.json")
 
@@ -143,6 +154,25 @@ def _thanks(helpers):
     return text
 
 
+def _odds(s):
+    """(percent, seeds counted, region) for seeds started around now in this
+    server's region, from WARDOGS Server List, or None when it is not known."""
+    try:
+        return serverlist.seed_odds(serverlist.server_key(s.get("joinCode")))
+    except Exception:  # noqa: BLE001 - the odds are a nice-to-have; never block a call
+        return None
+
+
+def _odds_line(s):
+    """One encouraging line for the seeding call, only when this hour usually works."""
+    odds = _odds(s) if SHOW_ODDS_FROM > 0 else None
+    if not odds or odds[0] < SHOW_ODDS_FROM:
+        return ""
+    pct, runs, region = odds
+    return (f"Good hour for it: {pct}% of the {runs} seeds started around now in {region} "
+            f"over the last two weeks reached 20.\n")
+
+
 def _text(kind, s, page, helpers, peak=0):
     name, n, cap = _short(s.get("name")), s.get("players") or 0, s.get("maxPlayers") or 0
     ping = f"<@&{ROLE_ID}> " if ROLE_ID else ""
@@ -150,9 +180,11 @@ def _text(kind, s, page, helpers, peak=0):
     if kind == "seeding":
         on_now = sorted({_plain(x) for x in _roster(s).values()}, key=str.lower)
         who = f"So far these people are in: {_join(on_now)}\n" if on_now else ""
+        odds = _odds_line(s)
+        credit = f"\n-# {serverlist.CREDIT_LINK}" if odds else ""
         return (f"{ping}**We are trying to seed {name}. Come and join!**\n"
                 f"Players on right now: **{n}/{cap}** · {need} more to go live\n"
-                f"{who}[Server page]({page})")
+                f"{odds}{who}[Server page]({page}){credit}")
     if kind == "push":
         return (f"{ping}**Final push: {need} more and {name} is live!**\n"
                 f"**{n}/{cap}** on right now. [Server page]({page})")
@@ -256,6 +288,16 @@ def check(server_id, s, page, http):
                 for other, ost in state.items() if isinstance(ost, dict))
             waited = now - st["_since"] >= START_WAIT
             rested = now - st.get("last_alert", 0) >= COOLDOWN
+            if waited and rested and not blocked and HOLD_BELOW > 0:
+                odds = _odds(s)
+                if odds and odds[0] < HOLD_BELOW:
+                    if not st.get("_held_said"):
+                        print(f"Seeding call for {server_id[:8]} held: only {odds[0]}% of seeds started "
+                              f"around this hour in {odds[2]} reach 20 (SEED_HOLD_BELOW_PCT).", flush=True)
+                        st["_held_said"] = True
+                    blocked = True
+                else:
+                    st.pop("_held_said", None)
             if waited and rested and not blocked:
                 made = http("POST", WEBHOOK + "?wait=true",
                             {"content": _text("seeding", s, page, helpers)[:2000], "allowed_mentions": mentions})
