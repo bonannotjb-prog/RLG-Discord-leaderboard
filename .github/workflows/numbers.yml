@@ -40,6 +40,10 @@ jobs:
           DISCORD_NUMBERS_WEBHOOK_URL: ${{ secrets.DISCORD_NUMBERS_WEBHOOK_URL }}
           # BattleMetrics server ids: RLG Vanilla, then RLG Infantry.
           BM_SERVER_IDS: "41199298,41243237"
+          # Optional: adds the rank and best-seeding-hours pictures from WARDOGS Server List.
+          WARDOGSERVERLIST_API_KEY: ${{ secrets.WARDOGSERVERLIST_API_KEY }}
+          # WarCon server ids (Vanilla, then Infantry), used to find each server on Server List.
+          WARCON_SERVER_IDS: "230a2cb3-e2af-450d-a1e1-515b08139d3d,2dd77c71-dbb6-49c4-95cf-78625467aba1"
           FORCE: ${{ inputs.force && '1' || '0' }}
         run: python weekly_numbers.py
 

@@ -1,0 +1,60 @@
+name: Discord gold price
+
+on:
+  schedule:
+    # The game sets a new gold bar price at midnight UTC (7 PM Eastern in winter).
+    # Two runs soon after catch it; the runs through the day are spares in case
+    # GitHub skips one. A run that finds the same price day does nothing.
+    - cron: "11,41 0 * * *"
+    - cron: "26 1,4,9,14,19 * * *"
+  workflow_dispatch:      # the "Run workflow" button
+    inputs:
+      force:
+        description: "Redraw even if this price is already posted"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write         # lets the job save the Discord message id back to the repo
+
+concurrency:
+  group: discord-gold-price
+  cancel-in-progress: false
+
+jobs:
+  gold:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install the picture tools
+        run: pip install --quiet pillow fonttools
+
+      - name: Read the gold bar price and update the picture
+        env:
+          # Both are secrets. The job does nothing, without failing, until both exist.
+          DISCORD_GOLD_WEBHOOK_URL: ${{ secrets.DISCORD_GOLD_WEBHOOK_URL }}
+          WARDOGSERVERLIST_API_KEY: ${{ secrets.WARDOGSERVERLIST_API_KEY }}
+          GOLD_DAYS: "30"         # days of history drawn as bars
+          FORCE: ${{ inputs.force && '1' || '0' }}
+        run: python gold.py
+
+      - name: Save state (message id and weekly heartbeat)
+        run: |
+          # Weekly heartbeat: this file changes once a week, so the repository always
+          # has a recent commit and GitHub never pauses the schedule for inactivity.
+          mkdir -p state
+          date -u +%G-W%V > state/heartbeat-gold.txt
+          if [ -n "$(git status --porcelain state)" ]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add state
+            git commit -m "Save gold price state"
+            git pull --rebase
+            git push
+          fi

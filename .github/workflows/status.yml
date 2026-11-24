@@ -38,6 +38,12 @@ env:
   SEED_COOLDOWN_MINUTES: "90"  # shortest gap between pings for the same server
   SEED_ALERT_ON_DROP: "0"      # 1 = also ping when a full server falls back to 20 or fewer
 
+  # Rank, join queue and seeding odds from WARDOGS Server List. Left out, without
+  # any error, until the WARDOGSERVERLIST_API_KEY secret exists.
+  WARDOGSERVERLIST_API_KEY: ${{ secrets.WARDOGSERVERLIST_API_KEY }}
+  SEED_SHOW_ODDS_FROM: "50"    # add "good hour for it" to a seeding call at this percent or more; 0 = never
+  SEED_HOLD_BELOW_PCT: "0"     # hold a seeding call when under this percent of seeds at this hour reach 20; 0 = never hold
+
   # Match recaps. These stay switched off until the DISCORD_RECAP_WEBHOOK_URL
   # secret exists.
   DISCORD_RECAP_WEBHOOK_URL: ${{ secrets.DISCORD_RECAP_WEBHOOK_URL }}

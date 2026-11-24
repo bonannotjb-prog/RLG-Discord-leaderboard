@@ -65,6 +65,13 @@ jobs:
           GROWTH_ADMINS_FILE="$RUNNER_TEMP/admins.json" python growth/pipeline/refresh.py "$RUNNER_TEMP/work"
           rm -f "$RUNNER_TEMP/admins.json"
 
+      - name: Pull the Server List figures (rank, share, hours, rule sets)
+        if: steps.check.outputs.build == '1'
+        continue-on-error: true   # these are extras: a problem here never blocks the page
+        env:
+          WARDOGSERVERLIST_API_KEY: ${{ secrets.WARDOGSERVERLIST_API_KEY }}
+        run: python growth/pipeline/serverlist_data.py docs/data
+
       - name: Save the rebuilt data
         if: steps.check.outputs.build == '1'
         run: |
