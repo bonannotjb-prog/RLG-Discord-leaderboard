@@ -14,6 +14,7 @@ on:
         default: false
 
 permissions:
+  actions: write          # lets the job start other jobs (see keepalive.py)
   contents: write         # saves the rebuilt data files
   pages: write            # publishes the page
   id-token: write
@@ -75,14 +76,7 @@ jobs:
       - name: Save the rebuilt data
         if: steps.check.outputs.build == '1'
         run: |
-          if [ -n "$(git status --porcelain docs/data)" ]; then
-            git config user.name "github-actions[bot]"
-            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git add docs/data
-            git commit -m "Update growth page data"
-            git pull --rebase
-            git push
-          fi
+          python keepalive.py save "Update growth page data" docs/data
 
       - uses: actions/configure-pages@v5
 
@@ -93,3 +87,19 @@ jobs:
       - name: Publish the page
         id: deploy
         uses: actions/deploy-pages@v4
+
+      - name: Tell the admin channel if this job failed
+        if: failure()
+        env:
+          # Optional secret. Nothing is sent until it exists.
+          DISCORD_ALERT_WEBHOOK_URL: ${{ secrets.DISCORD_ALERT_WEBHOOK_URL }}
+        run: python keepalive.py alert
+
+      - name: Make sure the other jobs are running
+        # GitHub's timer skips runs. Every job that does run checks on the rest:
+        # it restarts the status job if it has stopped and starts any job whose
+        # scheduled time passed with no run. See keepalive.py.
+        if: ${{ !cancelled() }}
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: python keepalive.py watchdog
