@@ -51,10 +51,19 @@ def http(method, url, body=None):
     headers = {"User-Agent": UA, "Accept": "application/json"}
     if data is not None:
         headers["Content-Type"] = "application/json"
-    req = urllib.request.Request(url, data=data, method=method, headers=headers)
-    with urllib.request.urlopen(req, timeout=30) as resp:
-        raw = resp.read()
-        return json.loads(raw) if raw else {}
+    for attempt in range(3):   # Warcon reads are tried up to three times
+        req = urllib.request.Request(url, data=data, method=method, headers=headers)
+        try:
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                raw = resp.read()
+                return json.loads(raw) if raw else {}
+        except urllib.error.HTTPError as e:
+            if e.code < 500 or attempt == 2:
+                raise
+        except (urllib.error.URLError, TimeoutError, ValueError, OSError):
+            if attempt == 2:
+                raise
+        time.sleep(3 * (attempt + 1))
 
 
 def get_json(path, params=None):
@@ -115,8 +124,16 @@ def main():
     if not WEBHOOK and not DRY_RUN:
         sys.exit("DISCORD_WEBHOOK_URL is not set. Add it as a repository secret.")
     ids = load_ids()
+    problems = []
     for sid in SERVER_IDS[:10]:
-        png, text, filename = build(sid)
+        try:
+            png, text, filename = build(sid)
+        except (urllib.error.URLError, TimeoutError, ValueError, OSError) as e:
+            # Keep going: the other server's board should still update.
+            code = f"HTTP {e.code}" if isinstance(e, urllib.error.HTTPError) else type(e).__name__
+            problems.append(f"{sid[:8]} could not be read from Warcon ({code})")
+            print(problems[-1] + "; its picture was left as it is.", flush=True)
+            continue
         if DRY_RUN:
             out = os.path.join(os.environ.get("DRY_RUN_DIR", "."), filename)
             with open(out, "wb") as f:
@@ -125,10 +142,13 @@ def main():
             continue
         ids[sid], new = rlgpost.put_image(WEBHOOK, ids.get(sid), png, filename, text)
         print(("Posted a new" if new else "Updated the") + f" leaderboard picture for {sid[:8]}.")
-    if not DRY_RUN:
+        # Saved after every post, so a later problem can never lose a new message id
+        # (a lost id means a second copy of the board is posted next time).
         os.makedirs(os.path.dirname(IDS_FILE), exist_ok=True)
         with open(IDS_FILE, "w", encoding="utf-8") as f:
             json.dump(ids, f, indent=1, sort_keys=True)
+    if problems:
+        sys.exit("Not every board was updated: " + "; ".join(problems))
 
 
 if __name__ == "__main__":
