@@ -98,12 +98,15 @@ def commit_state(message):
     job starts from it. Does nothing when run anywhere else."""
     if os.environ.get("GITHUB_ACTIONS") != "true":
         return
-    for cmd in (["git", "add", "state"],
-                ["git", "commit", "-q", "-m", message],
-                ["git", "pull", "-q", "--rebase"],
-                ["git", "push", "-q"]):
-        if subprocess.run(cmd, cwd=HERE, capture_output=True).returncode != 0:
-            break  # not fatal: it is tried again at the next save
+    run = lambda *cmd: subprocess.run(["git", *cmd], cwd=HERE, capture_output=True).returncode == 0
+    run("add", "state")
+    run("commit", "-q", "-m", message)   # "nothing to commit" is fine: an earlier commit may still need pushing
+    for _ in range(3):
+        if run("pull", "-q", "--rebase", "--autostash") and run("push", "-q"):
+            return
+        run("rebase", "--abort")
+        time.sleep(3)
+    print("State not saved to the repository this time; it is tried again at the next save.", flush=True)
 
 
 def _short(name):
