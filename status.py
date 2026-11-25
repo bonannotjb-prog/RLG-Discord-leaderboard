@@ -56,10 +56,20 @@ def http(method, url, body=None):
     headers = {"User-Agent": UA, "Accept": "application/json"}
     if data is not None:
         headers["Content-Type"] = "application/json"
-    req = urllib.request.Request(url, data=data, method=method, headers=headers)
-    with urllib.request.urlopen(req, timeout=20) as resp:
-        raw = resp.read()
-        return json.loads(raw) if raw else {}
+    # A read is tried twice, so one dropped connection does not show a server as
+    # offline. Anything that changes Discord is sent once only.
+    for attempt in range(2 if method == "GET" else 1):
+        req = urllib.request.Request(url, data=data, method=method, headers=headers)
+        try:
+            with urllib.request.urlopen(req, timeout=20) as resp:
+                raw = resp.read()
+                return json.loads(raw) if raw else {}
+        except urllib.error.HTTPError:
+            raise
+        except (urllib.error.URLError, TimeoutError, ValueError, OSError):
+            if method != "GET" or attempt == 1:
+                raise
+            time.sleep(2)
 
 
 def words(camel):
@@ -94,7 +104,7 @@ def get_matches(server_id):
         return matches
     try:
         matches = http("GET", f"{ORIGIN}/api/public/servers/{server_id}/matches").get("matches") or []
-    except (urllib.error.URLError, TimeoutError, ValueError, AttributeError):
+    except (urllib.error.URLError, TimeoutError, ValueError, OSError, AttributeError):
         pass  # keep the last known list
     _match_cache[server_id] = (time.time(), matches)
     return matches
@@ -114,7 +124,7 @@ def build_server(server_id):
     the raw Warcon status (None if unreadable), seen is when Warcon last looked."""
     try:
         s = http("GET", f"{ORIGIN}/api/public/servers/{server_id}").get("server", {})
-    except (urllib.error.URLError, TimeoutError, ValueError):
+    except (urllib.error.URLError, TimeoutError, ValueError, OSError, AttributeError):
         return {"name": _names.get(server_id, "Server"), "state": "OFFLINE"}, None, None
     name = _names[server_id] = short_name(s.get("name"))
     if not s.get("ok"):
@@ -270,6 +280,9 @@ def main():
         except (urllib.error.URLError, TimeoutError) as e:
             failures += 1
             print(f"Network error ({getattr(e, 'reason', e)}); retrying.", flush=True)
+        except Exception as e:  # noqa: BLE001 - one odd answer must not end a 5.5 hour job
+            failures += 1
+            print(f"Unexpected problem ({type(e).__name__}: {str(e)[:200]}); retrying.", flush=True)
         if failures >= 30:
             sys.exit("Giving up after 30 failed updates in a row.")
         time.sleep(max(1, INTERVAL - (time.time() - started)))
